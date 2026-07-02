@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 서술형 평가 연습 창</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .quiz-wrapper {
+            max-width: 1280px;
+            width: 100%;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        .header-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .main-layout {
+            display: flex;
+            gap: 25px;
+            flex-wrap: wrap;
+        }
+
+        .guide-container {
+            flex: 1;
+            min-width: 320px;
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .final-container {
+            flex: 1;
+            min-width: 320px;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #cbd5e1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .student-info-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .input-label {
+            font-weight: bold;
+            color: #334155;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .input-field,
+        .info-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        .info-input {
+            margin-bottom: 10px;
+        }
+
+        .connector-badge {
+            display: inline-block;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            margin: 4px;
+            cursor: pointer;
+            border: 1px solid #bae6fd;
+        }
+
+        .connector-badge:hover {
+            background: #0284c7;
+            color: white;
+        }
+
+        .final-textarea {
+            width: 100%;
+            height: 200px;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #94a3b8;
+            resize: none;
+            box-sizing: border-box;
+            font-size: 15px;
+            margin-bottom: 15px;
+        }
+
+        .edit-notice {
+            font-size: 12px;
+            color: #64748b;
+            margin: -8px 0 12px;
+        }
+
+        .submit-btn,
+        .action-btn {
+            background-color: #1e3a8a;
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+            background-color: #172554;
+        }
+
+        .submit-btn:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        .auth-panel {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .standard-btn {
+            background-color: #10b981;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="quiz-wrapper">
+        <!-- 로그인 화면 -->
+        <div id="login-section" class="auth-panel">
+            <h2 style="color:#1e3a8a;"><i class="fa-solid fa-lock"></i> 학생 본인 확인 인증</h2>
+            <p>서술형 시험실에 입장하기 위해 구글 로그인을 진행해 주세요.</p>
+            <button class="submit-btn" style="max-width:300px; margin-top:20px;" id="login-btn">
+                <i class="fa-brands fa-google"></i> Google 계정으로 로그인
+            </button>
+        </div>
+
+        <!-- 시험 화면 -->
+        <div id="quiz-section" class="hidden">
+            <div class="header-box">
+                <h2 style="margin:0; color:#1e3a8a;">
+                    <i class="fa-solid fa-graduation-cap"></i> AI 서술형 평가실
+                    (<span id="subject-display">과목</span>)
+                </h2>
+                <button class="action-btn standard-btn" style="width:auto; padding:8px 15px;" id="standard-btn">
+                    <i class="fa-solid fa-bookmark"></i> 성취기준/수준 보기
+                </button>
+            </div>
+
+            <div class="student-info-grid">
+                <div>
+                    <label class="input-label" for="s-grade">학년</label>
+                    <input type="number" id="s-grade" class="info-input" placeholder="예: 1" min="1" max="3">
+                </div>
+                <div>
+                    <label class="input-label" for="s-class">학과 / 반</label>
+                    <input type="text" id="s-class" class="info-input" placeholder="예: 3반">
+                </div>
+                <div>
+                    <label class="input-label" for="s-number">번호</label>
+                    <input type="number" id="s-number" class="info-input" placeholder="예: 15" min="1">
+                </div>
+                <div>
+                    <label class="input-label" for="s-name">이름</label>
+                    <input type="text" id="s-name" class="info-input" readonly>
+                </div>
+            </div>
+
+            <div class="main-layout">
+                <!-- 왼쪽: 단계별 가이드 -->
+                <div class="guide-container">
+                    <h3 style="margin-top:0; color:#0f172a;">
+                        <i class="fa-solid fa-lightbulb" style="color:#eab308;"></i> 단계별 생각 가이드
+                    </h3>
+
+                    <label class="input-label" for="step1">1단계: 핵심 주장 및 결론 적기</label>
+                    <input type="text" id="step1" class="input-field" placeholder="핵심 주장을 한 문장으로 적으세요.">
+
+                    <label class="input-label" for="step2" style="margin-top:10px;">2단계: 근거 및 구체적 예시 뒷받침</label>
+                    <input type="text" id="step2" class="input-field" placeholder="왜 그렇게 생각하는지 근거를 적으세요.">
+
+                    <div
+                        style="background:#eff6ff; padding:15px; border-radius:8px; border:1px solid #bfdbfe; margin-top:20px;">
+                        <h4 style="margin-top:0; color:#1e40af;">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> 추천 연결어 힌트
+                        </h4>
+                        <div id="connectors">
+                            <span class="connector-badge">왜냐하면</span>
+                            <span class="connector-badge">예를 들어</span>
+                            <span class="connector-badge">반면에</span>
+                            <span class="connector-badge">따라서</span>
+                            <span class="connector-badge">그 결과,</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 오른쪽: 최종 답안 -->
+                <div class="final-container">
+                    <h3 style="margin-top:0; color:#0f172a;">
+                        <i class="fa-solid fa-file-pen" style="color:#2563eb;"></i> 최종 답안 제출란
+                    </h3>
+                    <div style="background:#f1f5f9; padding:12px; border-radius:6px; font-weight:bold; margin-bottom:15px;"
+                        id="question-text">
+                        [문항] 과목 정보를 불러오는 중입니다...
+                    </div>
+                    <textarea id="student-answer" class="final-textarea"
+                        placeholder="1단계와 2단계 내용이 이곳에 실시간으로 결합됩니다. 문맥에 맞게 최종 수정해 주세요..."></textarea>
+                    <p class="edit-notice" id="edit-notice" style="display:none;">
+                        ✍️ 직접 수정을 시작했어요. 이제 1·2단계를 고쳐도 이 답안은 덮어쓰지 않습니다.
+                    </p>
+                    <button class="submit-btn" id="submit-btn">
+                        <i class="fa-solid fa-paper-plane"></i> 최종 답안 제출하기
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 성취기준 모달 -->
+    <div id="standard-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3 style="color:#1e3a8a; margin-top:0;" id="modal-title">🎯 과목 교육과정 안내</h3>
+            <div id="modal-body" style="line-height:1.6; font-size:14px; color:#334155;"></div>
+            <button class="action-btn" style="margin-top:20px; background:#64748b;" id="modal-close-btn">닫기</button>
+        </div>
+    </div>
+
+    <script>
+        /* ─────────────────────────────
+           1. 과목별 데이터 (문항 / 성취기준)
+           과목을 추가하려면 이 객체에만 항목을 넣으면 됩니다.
+        ───────────────────────────── */
+        const SUBJECT_DATA = {
+            '통합사회': {
+                question: '[문항] 정보 사회의 확산에 따라 나타날 수 있는 긍정적 측면과 부정적 측면에 대해 각각 한 가지씩 서술하시오.',
+                standardHtml: `
+                    <p><strong>[성취기준]</strong> 10통사09-02: 미래 사회가 인류의 삶에 미칠 영향을 예측하고, 대처 자세를 탐구한다.</p>
+                    <hr>
+                    <p><strong>[성취수준 A]:</strong> 미래 사회의 긍정적/부정적 모습을 다각적으로 탐색하고 논리적 근거와 실천적 대안을 훌륭히 제시함.</p>
+                    <p><strong>[성취수준 C]:</strong> 미래 사회의 보편적 특징을 알고 관련 현상을 매칭하여 설명할 수 있음.</p>`
+            },
+            '사회와 문화': {
+                question: '[문항] 현대 사회의 문화 변동의 원인을 내부적 요인과 외부적 요인으로 구분하여 논하시오.',
+                standardHtml: `
+                    <p><strong>[성취기준]</strong> 12사문04-01: 문화 변동의 다양한 원인과 양상을 파악하고 이해한다.</p>
+                    <hr>
+                    <p><strong>[성취수준 A]:</strong> 내재적 원인과 외재적 원인을 명확히 구분하고 문화 융합 사례를 입체적으로 분석함.</p>
+                    <p><strong>[성취수준 C]:</strong> 문화 변동의 대표적인 원인을 제시된 사례와 연결하여 설명할 수 있음.</p>`
+            }
+        };
+        const DEFAULT_SUBJECT = '통합사회';
+
+        /* ─────────────────────────────
+           2. Firebase 초기화
+        ───────────────────────────── */
+        const firebaseConfig = {
+            apiKey: "AIzaSyA74CrVcE1oSf2BZFFdf87fyCn3PkKO7yg",
+            authDomain: "homework-monitor.firebaseapp.com",
+            databaseURL: "https://homework-monitor-default-rtdb.firebaseio.com",
+            projectId: "homework-monitor",
+            storageBucket: "homework-monitor.appspot.com"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+
+        /* ─────────────────────────────
+           3. 과목 결정 및 화면 초기화
+           (URL에 없는 과목이 들어와도 기본 과목으로 안전하게 처리)
+        ───────────────────────────── */
+        const urlParams = new URLSearchParams(window.location.search);
+        const requestedSubject = urlParams.get('subject');
+        const currentSubject = SUBJECT_DATA[requestedSubject] ? requestedSubject : DEFAULT_SUBJECT;
+
+        document.getElementById('subject-display').textContent = currentSubject;
+        document.getElementById('question-text').textContent = SUBJECT_DATA[currentSubject].question;
+
+        /* ─────────────────────────────
+           4. 구글 로그인 (새로고침 시 로그인 유지 포함)
+        ───────────────────────────── */
+        function showQuizScreen(user) {
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('quiz-section').classList.remove('hidden');
+            document.getElementById('s-name').value = user.displayName || '';
+        }
+
+        auth.onAuthStateChanged((user) => {
+            if (user) showQuizScreen(user);
+        });
+
+        document.getElementById('login-btn').addEventListener('click', () => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider)
+                .then((result) => showQuizScreen(result.user))
+                .catch((err) => alert('로그인 오류: ' + err.message));
+        });
+
+        /* ─────────────────────────────
+           5. 단계별 가이드 → 최종 답안 자동 결합
+           학생이 최종 답안을 직접 수정하기 시작하면
+           자동 결합을 멈춰서 수정 내용이 사라지지 않게 합니다.
+        ───────────────────────────── */
+        const answerBox = document.getElementById('student-answer');
+        let manualEditMode = false;
+
+        function autoCombine() {
+            if (manualEditMode) return; // 직접 수정 이후에는 덮어쓰지 않음
+            const s1 = document.getElementById('step1').value.trim();
+            const s2 = document.getElementById('step2').value.trim();
+            let combined = s1;
+            if (s2) combined += (s1 ? ' 왜냐하면 ' : '') + s2;
+            answerBox.value = combined;
+        }
+
+        document.getElementById('step1').addEventListener('input', autoCombine);
+        document.getElementById('step2').addEventListener('input', autoCombine);
+
+        answerBox.addEventListener('input', () => {
+            if (!manualEditMode) {
+                manualEditMode = true;
+                document.getElementById('edit-notice').style.display = 'block';
+            }
+        });
+
+        /* ─────────────────────────────
+           6. 연결어 배지 (커서 위치에 삽입)
+        ───────────────────────────── */
+        document.querySelectorAll('.connector-badge').forEach((badge) => {
+            badge.addEventListener('click', () => {
+                const word = badge.textContent;
+                const start = answerBox.selectionStart ?? answerBox.value.length;
+                const end = answerBox.selectionEnd ?? answerBox.value.length;
+                const before = answerBox.value.slice(0, start);
+                const after = answerBox.value.slice(end);
+                const spacer = before && !before.endsWith(' ') ? ' ' : '';
+                answerBox.value = before + spacer + word + ' ' + after;
+                const cursor = (before + spacer + word + ' ').length;
+                answerBox.setSelectionRange(cursor, cursor);
+                answerBox.focus();
+                // 연결어 삽입도 학생의 직접 편집으로 간주
+                answerBox.dispatchEvent(new Event('input'));
+            });
+        });
+
+        /* ─────────────────────────────
+           7. 성취기준 모달
+        ───────────────────────────── */
+        document.getElementById('standard-btn').addEventListener('click', () => {
+            document.getElementById('modal-body').innerHTML = SUBJECT_DATA[currentSubject].standardHtml;
+            document.getElementById('standard-modal').classList.remove('hidden');
+        });
+        document.getElementById('modal-close-btn').addEventListener('click', () => {
+            document.getElementById('standard-modal').classList.add('hidden');
+        });
+        // 모달 바깥(어두운 영역) 클릭 시에도 닫기
+        document.getElementById('standard-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'standard-modal') e.target.classList.add('hidden');
+        });
+
+        /* ─────────────────────────────
+           8. 최종 답안 제출
+           - 저장 경로: evaluations/{과목}/{학년-반-번호_이름}
+             → 과목이 달라도, 반이 달라도 서로 덮어쓰지 않음
+           - Firebase 키에 쓸 수 없는 문자(. # $ [ ] /)는 제거
+        ───────────────────────────── */
+        function sanitizeKey(str) {
+            return String(str).replace(/[.#$\[\]\/\s]/g, '_');
+        }
+
+        document.getElementById('submit-btn').addEventListener('click', () => {
+            const grade = document.getElementById('s-grade').value.trim();
+            const sClass = document.getElementById('s-class').value.trim();
+            const num = document.getElementById('s-number').value.trim();
+            const name = document.getElementById('s-name').value.trim();
+            const answer = answerBox.value.trim();
+
+            if (!grade || !sClass || !num) {
+                alert('학년, 반, 번호를 모두 입력해 주세요!');
+                return;
+            }
+            if (!answer) {
+                alert('답안이 비어 있습니다. 내용을 작성한 뒤 제출해 주세요!');
+                return;
+            }
+            if (!confirm('답안을 제출하시겠습니까? 제출 후에는 선생님 모니터로 바로 전송됩니다.')) {
+                return;
+            }
+
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 제출 중...';
+
+            const studentKey = sanitizeKey(`${grade}학년-${sClass}-${num}번_${name}`);
+
+            database.ref(`evaluations/${sanitizeKey(currentSubject)}/${studentKey}`).set({
+                grade: grade,
+                class: sClass,
+                number: num,
+                name: name,
+                subject: currentSubject,
+                answer: answer,
+                status: '채점대기',
+                score: '계산중...',
+                feedback: '인공지능 교사가 서술형 내용을 분석하고 있습니다.',
+                submittedAt: firebase.database.ServerValue.TIMESTAMP
+            }).then(() => {
+                alert('서술형 답안 제출 완료! 선생님 모니터로 전송되었습니다.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 최종 답안 제출하기';
+            }).catch((err) => {
+                alert('제출에 실패했습니다. 잠시 후 다시 시도해 주세요.\n(' + err.message + ')');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 최종 답안 제출하기';
+            });
+        });
+    </script>
+</body>
+
+</html>
