@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+      <meta charset="UTF-8">
+      <title>과목 선택</title>
+      <style>
+            body {
+                  font-family: 'Arial', sans-serif;
+                  background-color: #f1f5f9;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                  height: 100vh;
+                  margin: 0;
+            }
+
+            .container {
+                  background: white;
+                  padding: 40px;
+                  border-radius: 16px;
+                  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+                  text-align: center;
+                  max-width: 500px;
+                  width: 100%;
+            }
+
+            h2 {
+                  color: #1e293b;
+                  margin-bottom: 25px;
+            }
+
+            .subject-btn {
+                  display: block;
+                  width: 100%;
+                  padding: 20px;
+                  margin: 15px 0;
+                  font-size: 20px;
+                  font-weight: bold;
+                  color: #1e3a8a;
+                  background: #eff6ff;
+                  border: 2px solid #bfdbfe;
+                  border-radius: 12px;
+                  cursor: pointer;
+                  transition: all 0.2s;
+            }
+
+            .subject-btn:hover {
+                  background: #1e3a8a;
+                  color: white;
+                  border-color: #1e3a8a;
+            }
+      </style>
+</head>
+
+<body>
+      <div class="container">
+            <h2>📚 학습하실 과목을 선택해 주세요</h2>
+            <button class="subject-btn" onclick="selectSubject('통합사회')">🌍 통합사회</button>
+            <button class="subject-btn" onclick="selectSubject('사회와 문화')">👥 사회와 문화</button>
+      </div>
+
+      <script>
+            const urlParams = new URLSearchParams(window.location.search);
+            const role = urlParams.get('role') || 'student';
+
+            function selectSubject(subject) {
+                  if (role === 'teacher') {
+                        window.location.href = `teacher_monitor.html?subject=${encodeURIComponent(subject)}`;
+                  } else {
+                        window.location.href = `student_quiz.html?subject=${encodeURIComponent(subject)}`;
+                  }
+            }
+      </script>
+</body>
+
+</html>
