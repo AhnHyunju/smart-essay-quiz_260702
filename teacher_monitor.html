@@ -288,6 +288,17 @@
             margin-top: 3px;
         }
 
+        /* 누적 이탈 5회 이상: 눈에 띄게 강조 */
+        .away-count-text.high {
+            font-size: 12px;
+            font-weight: bold;
+            color: #ffffff;
+            background: #dc2626;
+            border-radius: 6px;
+            padding: 2px 6px;
+            display: inline-block;
+        }
+
         .empty-row td {
             color: #94a3b8;
             padding: 30px;
@@ -378,7 +389,8 @@
         <div class="summary-bar">
             <span>👥 접속/제출 인원: <strong id="total-count">0</strong>명</span>
             <span>📨 답안 제출: <strong id="submitted-count">0</strong>명</span>
-            <span class="alert-count">🚨 이탈 감지: <strong id="away-now-count">0</strong>명</span>
+            <span class="alert-count">🚨 지금 이탈 중: <strong id="away-now-count">0</strong>명</span>
+            <span class="alert-count">⚠️ 이탈 기록 있음: <strong id="away-history-count">0</strong>명</span>
             <span>⏳ 채점 대기: <strong id="pending-count">0</strong>건</span>
         </div>
 
@@ -541,6 +553,11 @@
             document.getElementById('grading-status').textContent = msg;
         }
 
+        // 채점에 사용할 모델 목록 (앞의 것부터 시도, 실패 시 다음 모델로 자동 전환)
+        // ※ gemini-2.0-flash는 2026년 6월 1일 서비스 종료됨
+        const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
+        let workingModelIndex = 0;
+
         async function callGemini(answer) {
             const apiKey = (keyInput.value || '').trim();
             if (!apiKey) throw new Error('API 키를 먼저 입력하고 [키 저장]을 눌러주세요.');
@@ -560,25 +577,43 @@ ${answer}
 반드시 아래 형식의 JSON만 출력하세요. 다른 설명이나 마크다운 기호는 절대 쓰지 마세요.
 {"score": 0에서 10 사이의 정수, "level": "A"|"B"|"C"|"D"|"E", "feedback": "학생에게 존댓말로 전하는 2~3문장의 구체적 피드백. 잘한 점 1가지와 보완할 점 1가지를 포함"}`;
 
-            const res = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: { temperature: 0.2 }
-                    })
-                }
-            );
+            // 현재 모델부터 시도하고, 모델 문제(404/한도 0 등)면 다음 모델로 자동 전환
+            let data = null;
+            let lastError = null;
+            for (let i = workingModelIndex; i < GEMINI_MODELS.length; i++) {
+                const model = GEMINI_MODELS[i];
+                const res = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: { temperature: 0.2 }
+                        })
+                    }
+                );
 
-            if (!res.ok) {
+                if (res.ok) {
+                    workingModelIndex = i; // 성공한 모델을 기억해서 다음부터 바로 사용
+                    data = await res.json();
+                    break;
+                }
+
                 const errBody = await res.json().catch(() => ({}));
                 const msg = errBody?.error?.message || `HTTP ${res.status}`;
-                throw new Error('Gemini 호출 실패: ' + msg);
+                lastError = `[${model}] ${msg}`;
+
+                // 키 자체가 잘못된 경우(400/403)는 모델을 바꿔도 소용없으니 즉시 중단
+                if (res.status === 400 || res.status === 403) {
+                    throw new Error('Gemini 호출 실패: ' + lastError);
+                }
+                // 그 외(모델 종료, 한도 0, 404 등)는 다음 모델로 재시도
             }
 
-            const data = await res.json();
+            if (!data) {
+                throw new Error('Gemini 호출 실패 (모든 모델 시도함): ' + lastError);
+            }
             const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '')
                 .replace(/```json|```/g, '').trim();
             const parsed = JSON.parse(text);
@@ -694,8 +729,9 @@ ${answer}
             const count = session ? Number(session.awayCount || 0) : 0;
             if (count > 0) {
                 const c = document.createElement('span');
-                c.className = 'away-count-text';
-                c.textContent = `누적 이탈 ${count}회`;
+                c.className = count >= 5 ? 'away-count-text high' : 'away-count-text';
+                c.textContent = count >= 5 ? `⚠️ 누적 이탈 ${count}회` : `누적 이탈 ${count}회`;
+                if (count >= 5) td.appendChild(document.createElement('br'));
                 td.appendChild(c);
             }
             return td;
@@ -786,6 +822,8 @@ ${answer}
             document.getElementById('submitted-count').textContent = rows.filter((r) => r.count > 0).length;
             document.getElementById('away-now-count').textContent =
                 rows.filter((r) => r.session && r.session.focusState === 'away').length;
+            document.getElementById('away-history-count').textContent =
+                rows.filter((r) => r.session && Number(r.session.awayCount || 0) > 0).length;
             document.getElementById('pending-count').textContent = collectPending().length;
 
             if (rows.length === 0) {

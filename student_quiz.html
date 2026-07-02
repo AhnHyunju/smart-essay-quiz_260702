@@ -455,7 +455,6 @@
 
         /* ═════════════════════════════════
            5. 시험 이탈 감지 (핵심 기능 ①)
-           - 커서가 창 밖으로 나감 (mouseleave)
            - 다른 탭/프로그램으로 전환 (visibilitychange, blur)
            → 학생: 빨간 경고 배너 표시
            → 교사: 대시보드에 빨간불 + 누적 횟수 실시간 전송
@@ -566,15 +565,15 @@
             reportFocusState();
         }
 
-        // ① 다른 탭/프로그램으로 전환
+        // ① 다른 탭으로 전환하거나 브라우저를 최소화함
         document.addEventListener('visibilitychange', () => {
             document.hidden ? goAway() : comeBack();
         });
+        // ② 다른 프로그램/창을 클릭해서 시험 창이 초점을 잃음
         window.addEventListener('blur', goAway);
         window.addEventListener('focus', comeBack);
-        // ② 마우스 커서가 브라우저 창을 벗어남
-        document.addEventListener('mouseleave', goAway);
-        document.addEventListener('mouseenter', comeBack);
+        // ※ 마우스 커서가 창 밖으로 살짝 나가는 것(mouseleave)은
+        //    너무 예민해서 이탈로 세지 않음 (억울한 경고 방지)
 
         /* ═════════════════════════════════
            6. 단계별 가이드 → 최종 답안 자동 결합
