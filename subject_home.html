@@ -28,7 +28,7 @@
 
         h2 {
             color: #1e293b;
-            margin-bottom: 25px;
+            margin-bottom: 15px;
         }
 
         .role-indicator {
@@ -58,11 +58,24 @@
             transition: all 0.2s;
         }
 
+        .subject-btn small {
+            display: block;
+            font-size: 13px;
+            font-weight: normal;
+            margin-top: 4px;
+            color: #64748b;
+        }
+
         .subject-btn:hover,
         .subject-btn:focus-visible {
             background: #1e3a8a;
             color: white;
             border-color: #1e3a8a;
+        }
+
+        .subject-btn:hover small,
+        .subject-btn:focus-visible small {
+            color: #bfdbfe;
         }
     </style>
 </head>
@@ -71,12 +84,12 @@
     <main class="container">
         <h2>📚 학습하실 과목을 선택해 주세요</h2>
         <span class="role-indicator" id="role-indicator"></span>
-        <button class="subject-btn" data-subject="통합사회">🌍 통합사회</button>
-        <button class="subject-btn" data-subject="사회와 문화">👥 사회와 문화</button>
+        <button class="subject-btn" data-subject="통합사회">🌍 통합사회<small>고등학교 1학년</small></button>
+        <button class="subject-btn" data-subject="사회와 문화">👥 사회와 문화<small>고등학교 2학년</small></button>
     </main>
 
     <script>
-        // role 값은 'teacher' 또는 'student'만 허용 (그 외 값은 student로 처리)
+        // role은 'teacher' 또는 'student'만 허용 (그 외에는 student로 처리)
         const urlParams = new URLSearchParams(window.location.search);
         const role = urlParams.get('role') === 'teacher' ? 'teacher' : 'student';
 
@@ -87,8 +100,7 @@
 
         document.querySelectorAll('.subject-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
-                const subject = btn.dataset.subject;
-                window.location.href = `${targetPage}?subject=${encodeURIComponent(subject)}`;
+                window.location.href = `${targetPage}?subject=${encodeURIComponent(btn.dataset.subject)}`;
             });
         });
     </script>

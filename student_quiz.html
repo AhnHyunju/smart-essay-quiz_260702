@@ -36,6 +36,8 @@
             border-bottom: 2px solid #e2e8f0;
             padding-bottom: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .main-layout {
@@ -187,10 +189,77 @@
             background-color: #10b981;
             margin-bottom: 15px;
         }
+
+        /* ── 이탈 경고 배너 ── */
+        .warning-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: #dc2626;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            padding: 14px 10px;
+            font-size: 15px;
+            z-index: 2000;
+            box-sizing: border-box;
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+        }
+
+        .warning-banner.show {
+            transform: translateY(0);
+        }
+
+        /* 응시 상태 표시등 */
+        .focus-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px 12px;
+            border-radius: 20px;
+            background: #f0fdf4;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+        }
+
+        .focus-status.away {
+            background: #fef2f2;
+            color: #b91c1c;
+            border-color: #fecaca;
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #22c55e;
+        }
+
+        .focus-status.away .status-dot {
+            background: #dc2626;
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: 0.2;
+            }
+        }
     </style>
 </head>
 
 <body>
+
+    <!-- 이탈 경고 배너 -->
+    <div id="warning-banner" class="warning-banner">
+        ⚠️ 시험 화면 이탈이 감지되었습니다! (누적 <span id="away-count-display">0</span>회)
+        — 이탈 기록은 선생님 대시보드에 실시간으로 표시됩니다.
+    </div>
 
     <div class="quiz-wrapper">
         <!-- 로그인 화면 -->
@@ -209,9 +278,15 @@
                     <i class="fa-solid fa-graduation-cap"></i> AI 서술형 평가실
                     (<span id="subject-display">과목</span>)
                 </h2>
-                <button class="action-btn standard-btn" style="width:auto; padding:8px 15px;" id="standard-btn">
-                    <i class="fa-solid fa-bookmark"></i> 성취기준/수준 보기
-                </button>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span class="focus-status" id="focus-status">
+                        <span class="status-dot"></span><span id="focus-status-text">응시 중</span>
+                    </span>
+                    <button class="action-btn standard-btn" style="width:auto; padding:8px 15px; margin:0;"
+                        id="standard-btn">
+                        <i class="fa-solid fa-bookmark"></i> 성취기준/수준 보기
+                    </button>
+                </div>
             </div>
 
             <div class="student-info-grid">
@@ -293,10 +368,9 @@
     </div>
 
     <script>
-        /* ─────────────────────────────
-           1. 과목별 데이터 (문항 / 성취기준)
-           과목을 추가하려면 이 객체에만 항목을 넣으면 됩니다.
-        ───────────────────────────── */
+        /* ═════════════════════════════════
+           1. 과목별 데이터 (문항 / 성취기준 A~E)
+        ═════════════════════════════════ */
         const SUBJECT_DATA = {
             '통합사회': {
                 question: '[문항] 정보 사회의 확산에 따라 나타날 수 있는 긍정적 측면과 부정적 측면에 대해 각각 한 가지씩 서술하시오.',
@@ -304,7 +378,10 @@
                     <p><strong>[성취기준]</strong> 10통사09-02: 미래 사회가 인류의 삶에 미칠 영향을 예측하고, 대처 자세를 탐구한다.</p>
                     <hr>
                     <p><strong>[성취수준 A]:</strong> 미래 사회의 긍정적/부정적 모습을 다각적으로 탐색하고 논리적 근거와 실천적 대안을 훌륭히 제시함.</p>
-                    <p><strong>[성취수준 C]:</strong> 미래 사회의 보편적 특징을 알고 관련 현상을 매칭하여 설명할 수 있음.</p>`
+                    <p><strong>[성취수준 B]:</strong> 긍정적/부정적 측면을 모두 서술하고 각각에 타당한 근거를 제시함.</p>
+                    <p><strong>[성취수준 C]:</strong> 미래 사회의 보편적 특징을 알고 관련 현상을 매칭하여 설명할 수 있음.</p>
+                    <p><strong>[성취수준 D]:</strong> 긍정적 또는 부정적 측면 중 한 가지만 부분적으로 서술함.</p>
+                    <p><strong>[성취수준 E]:</strong> 정보 사회의 특징을 언급하나 문항의 요구와 연결하지 못함.</p>`
             },
             '사회와 문화': {
                 question: '[문항] 현대 사회의 문화 변동의 원인을 내부적 요인과 외부적 요인으로 구분하여 논하시오.',
@@ -312,14 +389,17 @@
                     <p><strong>[성취기준]</strong> 12사문04-01: 문화 변동의 다양한 원인과 양상을 파악하고 이해한다.</p>
                     <hr>
                     <p><strong>[성취수준 A]:</strong> 내재적 원인과 외재적 원인을 명확히 구분하고 문화 융합 사례를 입체적으로 분석함.</p>
-                    <p><strong>[성취수준 C]:</strong> 문화 변동의 대표적인 원인을 제시된 사례와 연결하여 설명할 수 있음.</p>`
+                    <p><strong>[성취수준 B]:</strong> 내부적/외부적 요인을 구분하여 서술하고 적절한 사례를 제시함.</p>
+                    <p><strong>[성취수준 C]:</strong> 문화 변동의 대표적인 원인을 제시된 사례와 연결하여 설명할 수 있음.</p>
+                    <p><strong>[성취수준 D]:</strong> 내부적 또는 외부적 요인 중 한 가지만 부분적으로 서술함.</p>
+                    <p><strong>[성취수준 E]:</strong> 문화 변동이라는 개념을 언급하나 원인을 구분하지 못함.</p>`
             }
         };
         const DEFAULT_SUBJECT = '통합사회';
 
-        /* ─────────────────────────────
+        /* ═════════════════════════════════
            2. Firebase 초기화
-        ───────────────────────────── */
+        ═════════════════════════════════ */
         const firebaseConfig = {
             apiKey: "AIzaSyA74CrVcE1oSf2BZFFdf87fyCn3PkKO7yg",
             authDomain: "homework-monitor.firebaseapp.com",
@@ -331,10 +411,9 @@
         const auth = firebase.auth();
         const database = firebase.database();
 
-        /* ─────────────────────────────
+        /* ═════════════════════════════════
            3. 과목 결정 및 화면 초기화
-           (URL에 없는 과목이 들어와도 기본 과목으로 안전하게 처리)
-        ───────────────────────────── */
+        ═════════════════════════════════ */
         const urlParams = new URLSearchParams(window.location.search);
         const requestedSubject = urlParams.get('subject');
         const currentSubject = SUBJECT_DATA[requestedSubject] ? requestedSubject : DEFAULT_SUBJECT;
@@ -342,13 +421,23 @@
         document.getElementById('subject-display').textContent = currentSubject;
         document.getElementById('question-text').textContent = SUBJECT_DATA[currentSubject].question;
 
-        /* ─────────────────────────────
-           4. 구글 로그인 (새로고침 시 로그인 유지 포함)
-        ───────────────────────────── */
+        // Firebase 키에 쓸 수 없는 문자 제거 (교사 페이지와 동일한 규칙이어야 함)
+        function sanitizeKey(str) {
+            return String(str).replace(/[.#$\[\]\/\s]/g, '_');
+        }
+        const subjKey = sanitizeKey(currentSubject);
+
+        /* ═════════════════════════════════
+           4. 구글 로그인 (새로고침 시 로그인 유지)
+        ═════════════════════════════════ */
+        let isLoggedIn = false;
+
         function showQuizScreen(user) {
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('quiz-section').classList.remove('hidden');
             document.getElementById('s-name').value = user.displayName || '';
+            isLoggedIn = true;
+            syncSession(); // 이름이 채워졌으니 세션 등록 시도
         }
 
         auth.onAuthStateChanged((user) => {
@@ -362,16 +451,138 @@
                 .catch((err) => alert('로그인 오류: ' + err.message));
         });
 
-        /* ─────────────────────────────
-           5. 단계별 가이드 → 최종 답안 자동 결합
-           학생이 최종 답안을 직접 수정하기 시작하면
-           자동 결합을 멈춰서 수정 내용이 사라지지 않게 합니다.
-        ───────────────────────────── */
+        /* ═════════════════════════════════
+           5. 시험 이탈 감지 (핵심 기능 ①)
+           - 커서가 창 밖으로 나감 (mouseleave)
+           - 다른 탭/프로그램으로 전환 (visibilitychange, blur)
+           → 학생: 빨간 경고 배너 표시
+           → 교사: 대시보드에 빨간불 + 누적 횟수 실시간 전송
+        ═════════════════════════════════ */
+        let isAway = false;
+        let awayCount = 0;
+        let sessionRef = null;      // 현재 학생의 세션 노드
+        let bannerTimer = null;
+
+        function getStudentInfo() {
+            return {
+                grade: document.getElementById('s-grade').value.trim(),
+                sClass: document.getElementById('s-class').value.trim(),
+                num: document.getElementById('s-number').value.trim(),
+                name: document.getElementById('s-name').value.trim()
+            };
+        }
+
+        function getStudentKey() {
+            const { grade, sClass, num, name } = getStudentInfo();
+            if (!grade || !sClass || !num || !name) return null;
+            return sanitizeKey(`${grade}학년-${sClass}-${num}번_${name}`);
+        }
+
+        // 학생 정보가 바뀔 때마다 세션 노드를 (재)등록
+        function syncSession() {
+            if (!isLoggedIn) return;
+            const key = getStudentKey();
+            if (!key) return;
+
+            const newRef = database.ref(`sessions/${subjKey}/${key}`);
+
+            // 학번 정보가 바뀌어 키가 달라졌다면 이전 세션 정리
+            if (sessionRef && sessionRef.toString() !== newRef.toString()) {
+                sessionRef.onDisconnect().cancel();
+                sessionRef.remove();
+            }
+            sessionRef = newRef;
+
+            const { grade, sClass, num, name } = getStudentInfo();
+            sessionRef.update({
+                grade: grade,
+                class: sClass,
+                number: num,
+                name: name,
+                focusState: isAway ? 'away' : 'active',
+                awayCount: awayCount,
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+            // 창을 닫거나 인터넷이 끊기면 자동으로 '접속종료' 처리
+            sessionRef.onDisconnect().update({
+                focusState: 'offline',
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+
+        ['s-grade', 's-class', 's-number'].forEach((id) => {
+            document.getElementById(id).addEventListener('change', syncSession);
+        });
+
+        function reportFocusState() {
+            if (!sessionRef) return; // 학번 미입력 시에는 화면 경고만 (횟수는 로컬 누적 후 입력 시 반영)
+            sessionRef.update({
+                focusState: isAway ? 'away' : 'active',
+                awayCount: awayCount,
+                lastAwayAt: isAway ? firebase.database.ServerValue.TIMESTAMP : null,
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+
+        function updateStatusPill() {
+            const pill = document.getElementById('focus-status');
+            const text = document.getElementById('focus-status-text');
+            if (isAway) {
+                pill.classList.add('away');
+                text.textContent = `이탈 감지 (${awayCount}회)`;
+            } else {
+                pill.classList.remove('away');
+                text.textContent = awayCount > 0 ? `응시 중 (이탈 ${awayCount}회)` : '응시 중';
+            }
+        }
+
+        function goAway() {
+            if (!isLoggedIn || isAway) return;
+            isAway = true;
+            awayCount++;
+
+            // 학생 화면 경고 배너
+            document.getElementById('away-count-display').textContent = awayCount;
+            document.getElementById('warning-banner').classList.add('show');
+            clearTimeout(bannerTimer);
+
+            updateStatusPill();
+            reportFocusState(); // 교사 대시보드로 즉시 전송 → 빨간불
+        }
+
+        function comeBack() {
+            if (!isLoggedIn || !isAway) return;
+            isAway = false;
+
+            // 배너는 3초 뒤에 내려서 경고를 확실히 인지시킴
+            clearTimeout(bannerTimer);
+            bannerTimer = setTimeout(() => {
+                document.getElementById('warning-banner').classList.remove('show');
+            }, 3000);
+
+            updateStatusPill();
+            reportFocusState();
+        }
+
+        // ① 다른 탭/프로그램으로 전환
+        document.addEventListener('visibilitychange', () => {
+            document.hidden ? goAway() : comeBack();
+        });
+        window.addEventListener('blur', goAway);
+        window.addEventListener('focus', comeBack);
+        // ② 마우스 커서가 브라우저 창을 벗어남
+        document.addEventListener('mouseleave', goAway);
+        document.addEventListener('mouseenter', comeBack);
+
+        /* ═════════════════════════════════
+           6. 단계별 가이드 → 최종 답안 자동 결합
+           (직접 수정 시작 후에는 덮어쓰지 않음)
+        ═════════════════════════════════ */
         const answerBox = document.getElementById('student-answer');
         let manualEditMode = false;
 
         function autoCombine() {
-            if (manualEditMode) return; // 직접 수정 이후에는 덮어쓰지 않음
+            if (manualEditMode) return;
             const s1 = document.getElementById('step1').value.trim();
             const s2 = document.getElementById('step2').value.trim();
             let combined = s1;
@@ -389,9 +600,9 @@
             }
         });
 
-        /* ─────────────────────────────
-           6. 연결어 배지 (커서 위치에 삽입)
-        ───────────────────────────── */
+        /* ═════════════════════════════════
+           7. 연결어 배지 (커서 위치에 삽입)
+        ═════════════════════════════════ */
         document.querySelectorAll('.connector-badge').forEach((badge) => {
             badge.addEventListener('click', () => {
                 const word = badge.textContent;
@@ -404,14 +615,13 @@
                 const cursor = (before + spacer + word + ' ').length;
                 answerBox.setSelectionRange(cursor, cursor);
                 answerBox.focus();
-                // 연결어 삽입도 학생의 직접 편집으로 간주
                 answerBox.dispatchEvent(new Event('input'));
             });
         });
 
-        /* ─────────────────────────────
-           7. 성취기준 모달
-        ───────────────────────────── */
+        /* ═════════════════════════════════
+           8. 성취기준 모달
+        ═════════════════════════════════ */
         document.getElementById('standard-btn').addEventListener('click', () => {
             document.getElementById('modal-body').innerHTML = SUBJECT_DATA[currentSubject].standardHtml;
             document.getElementById('standard-modal').classList.remove('hidden');
@@ -419,26 +629,18 @@
         document.getElementById('modal-close-btn').addEventListener('click', () => {
             document.getElementById('standard-modal').classList.add('hidden');
         });
-        // 모달 바깥(어두운 영역) 클릭 시에도 닫기
         document.getElementById('standard-modal').addEventListener('click', (e) => {
             if (e.target.id === 'standard-modal') e.target.classList.add('hidden');
         });
 
-        /* ─────────────────────────────
-           8. 최종 답안 제출
-           - 저장 경로: evaluations/{과목}/{학년-반-번호_이름}
-             → 과목이 달라도, 반이 달라도 서로 덮어쓰지 않음
-           - Firebase 키에 쓸 수 없는 문자(. # $ [ ] /)는 제거
-        ───────────────────────────── */
-        function sanitizeKey(str) {
-            return String(str).replace(/[.#$\[\]\/\s]/g, '_');
-        }
-
+        /* ═════════════════════════════════
+           9. 최종 답안 제출 (핵심 기능 ②: 데이터 누적)
+           - evaluations/{과목}/{학생키}/info : 학생 기본 정보
+           - evaluations/{과목}/{학생키}/submissions : push()로 제출 이력 누적
+             → 재제출해도 이전 답안이 사라지지 않고 모두 보존됨
+        ═════════════════════════════════ */
         document.getElementById('submit-btn').addEventListener('click', () => {
-            const grade = document.getElementById('s-grade').value.trim();
-            const sClass = document.getElementById('s-class').value.trim();
-            const num = document.getElementById('s-number').value.trim();
-            const name = document.getElementById('s-name').value.trim();
+            const { grade, sClass, num, name } = getStudentInfo();
             const answer = answerBox.value.trim();
 
             if (!grade || !sClass || !num) {
@@ -457,21 +659,28 @@
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 제출 중...';
 
-            const studentKey = sanitizeKey(`${grade}학년-${sClass}-${num}번_${name}`);
+            const studentKey = getStudentKey();
+            const baseRef = database.ref(`evaluations/${subjKey}/${studentKey}`);
 
-            database.ref(`evaluations/${sanitizeKey(currentSubject)}/${studentKey}`).set({
+            const infoUpdate = baseRef.child('info').update({
                 grade: grade,
                 class: sClass,
                 number: num,
                 name: name,
-                subject: currentSubject,
+                subject: currentSubject
+            });
+
+            const submissionPush = baseRef.child('submissions').push({
                 answer: answer,
                 status: '채점대기',
                 score: '계산중...',
                 feedback: '인공지능 교사가 서술형 내용을 분석하고 있습니다.',
+                awayCountAtSubmit: awayCount,     // 제출 시점까지의 이탈 횟수도 함께 기록
                 submittedAt: firebase.database.ServerValue.TIMESTAMP
-            }).then(() => {
-                alert('서술형 답안 제출 완료! 선생님 모니터로 전송되었습니다.');
+            });
+
+            Promise.all([infoUpdate, submissionPush]).then(() => {
+                alert('서술형 답안 제출 완료! 선생님 모니터로 전송되었습니다.\n(재제출 시 이전 답안도 함께 보관됩니다.)');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 최종 답안 제출하기';
             }).catch((err) => {
