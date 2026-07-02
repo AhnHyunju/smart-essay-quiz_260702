@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>교사용 실시간 모니터링 시스템</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
         body {
@@ -27,6 +28,7 @@
             color: #1e3a8a;
             border-bottom: 2px solid #e2e8f0;
             padding-bottom: 10px;
+            margin-top: 0;
         }
 
         .summary-bar {
@@ -46,10 +48,92 @@
             color: #dc2626;
         }
 
+        /* ── AI 채점 제어판 ── */
+        .grading-panel {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-top: 14px;
+        }
+
+        .grading-panel label {
+            font-size: 13px;
+            color: #334155;
+            font-weight: bold;
+        }
+
+        .api-key-input {
+            flex: 1;
+            min-width: 220px;
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .panel-btn {
+            border: none;
+            border-radius: 6px;
+            padding: 9px 14px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+            background: #1e3a8a;
+        }
+
+        .panel-btn:hover:not(:disabled) {
+            background: #172554;
+        }
+
+        .panel-btn:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        .panel-btn.grade {
+            background: #7c3aed;
+        }
+
+        .panel-btn.grade:hover:not(:disabled) {
+            background: #6d28d9;
+        }
+
+        .auto-grade-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+            color: #334155;
+        }
+
+        .grading-status {
+            font-size: 13px;
+            color: #7c3aed;
+            font-weight: bold;
+            width: 100%;
+        }
+
+        .login-note {
+            font-size: 12px;
+            color: #b45309;
+            width: 100%;
+        }
+
+        .table-scroll {
+            overflow-x: auto;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            margin-top: 16px;
+            min-width: 1000px;
         }
 
         th,
@@ -79,16 +163,45 @@
             text-align: left;
             font-size: 13px;
             color: #475569;
+            max-width: 260px;
         }
 
         .score-cell {
             color: #b91c1c;
             font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .level-badge {
+            display: inline-block;
+            background: #ede9fe;
+            color: #6d28d9;
+            border-radius: 6px;
+            padding: 2px 7px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 4px;
         }
 
         .badge-wait {
             background: #fef3c7;
             color: #d97706;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .badge-done {
+            background: #dcfce7;
+            color: #15803d;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .badge-fail {
+            background: #fee2e2;
+            color: #b91c1c;
             padding: 4px 8px;
             border-radius: 4px;
             font-size: 12px;
@@ -108,13 +221,18 @@
             color: #1d4ed8;
             border: 1px solid #bfdbfe;
             border-radius: 10px;
-            padding: 2px 8px;
+            padding: 3px 9px;
             font-size: 11px;
             font-weight: bold;
-            margin-top: 4px;
+            margin-top: 5px;
+            cursor: pointer;
         }
 
-        /* ── 응시 상태 표시등 ── */
+        .attempt-badge:hover {
+            background: #1d4ed8;
+            color: white;
+        }
+
         .status-light {
             display: inline-flex;
             align-items: center;
@@ -174,6 +292,83 @@
             color: #94a3b8;
             padding: 30px;
         }
+
+        /* ── 이력 모달 ── */
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 16px;
+        }
+
+        .modal.open {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 640px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h3 {
+            color: #1e3a8a;
+            margin-top: 0;
+        }
+
+        .history-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+            background: #f8fafc;
+        }
+
+        .history-item .h-meta {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .history-item .h-answer {
+            font-size: 14px;
+            color: #0f172a;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .history-item .h-result {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #475569;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 8px;
+        }
+
+        .close-btn {
+            background: #64748b;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 6px;
+        }
     </style>
 </head>
 
@@ -184,29 +379,79 @@
             <span>👥 접속/제출 인원: <strong id="total-count">0</strong>명</span>
             <span>📨 답안 제출: <strong id="submitted-count">0</strong>명</span>
             <span class="alert-count">🚨 이탈 감지: <strong id="away-now-count">0</strong>명</span>
+            <span>⏳ 채점 대기: <strong id="pending-count">0</strong>건</span>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>학년</th>
-                    <th>반</th>
-                    <th>번호</th>
-                    <th>이름</th>
-                    <th>응시 상태</th>
-                    <th>제출한 서술형 답안 내용 (최신)</th>
-                    <th>AI 채점 현황</th>
-                    <th>점수</th>
-                    <th>Gemini 맞춤 피드백</th>
-                </tr>
-            </thead>
-            <tbody id="data-list"></tbody>
-        </table>
+
+        <!-- AI 채점 제어판 -->
+        <div class="grading-panel">
+            <label>🤖 Gemini AI 채점:</label>
+            <input type="password" id="api-key" class="api-key-input"
+                placeholder="Gemini API 키를 붙여넣으세요 (이 컴퓨터에만 저장됩니다)">
+            <button class="panel-btn" id="save-key-btn">키 저장</button>
+            <button class="panel-btn grade" id="grade-btn">⚡ 미채점 답안 AI 채점 실행</button>
+            <label class="auto-grade-label">
+                <input type="checkbox" id="auto-grade"> 새 제출 자동 채점
+            </label>
+            <span class="grading-status" id="grading-status"></span>
+            <span class="login-note" id="login-note"></span>
+        </div>
+
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>학년</th>
+                        <th>반</th>
+                        <th>번호</th>
+                        <th>이름</th>
+                        <th>응시 상태</th>
+                        <th>제출한 서술형 답안 내용 (최신)</th>
+                        <th>AI 채점 현황</th>
+                        <th>점수 / 수준</th>
+                        <th>Gemini 맞춤 피드백</th>
+                    </tr>
+                </thead>
+                <tbody id="data-list"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 제출 이력 모달 -->
+    <div id="history-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="history-title">📚 제출 이력</h3>
+            <div id="history-body"></div>
+            <button class="close-btn" onclick="document.getElementById('history-modal').classList.remove('open')">닫기</button>
+        </div>
     </div>
 
     <script>
         /* ═════════════════════════════════
-           1. Firebase 초기화
-           (student_quiz.html과 반드시 동일한 설정)
+           1. 과목별 문항·성취기준 (채점 기준으로 사용)
+        ═════════════════════════════════ */
+        const SUBJECT_DATA = {
+            '통합사회': {
+                question: '정보 사회의 확산에 따라 나타날 수 있는 긍정적 측면과 부정적 측면에 대해 각각 한 가지씩 서술하시오.',
+                standards: `[성취기준] 10통사09-02: 미래 사회가 인류의 삶에 미칠 영향을 예측하고, 대처 자세를 탐구한다.
+[성취수준 A] 미래 사회의 긍정적/부정적 모습을 다각적으로 탐색하고 논리적 근거와 실천적 대안을 훌륭히 제시함.
+[성취수준 B] 긍정적/부정적 측면을 모두 서술하고 각각에 타당한 근거를 제시함.
+[성취수준 C] 미래 사회의 보편적 특징을 알고 관련 현상을 매칭하여 설명할 수 있음.
+[성취수준 D] 긍정적 또는 부정적 측면 중 한 가지만 부분적으로 서술함.
+[성취수준 E] 정보 사회의 특징을 언급하나 문항의 요구와 연결하지 못함.`
+            },
+            '사회와 문화': {
+                question: '현대 사회의 문화 변동의 원인을 내부적 요인과 외부적 요인으로 구분하여 논하시오.',
+                standards: `[성취기준] 12사문04-01: 문화 변동의 다양한 원인과 양상을 파악하고 이해한다.
+[성취수준 A] 내재적 원인과 외재적 원인을 명확히 구분하고 문화 융합 사례를 입체적으로 분석함.
+[성취수준 B] 내부적/외부적 요인을 구분하여 서술하고 적절한 사례를 제시함.
+[성취수준 C] 문화 변동의 대표적인 원인을 제시된 사례와 연결하여 설명할 수 있음.
+[성취수준 D] 내부적 또는 외부적 요인 중 한 가지만 부분적으로 서술함.
+[성취수준 E] 문화 변동이라는 개념을 언급하나 원인을 구분하지 못함.`
+            }
+        };
+
+        /* ═════════════════════════════════
+           2. Firebase 초기화
         ═════════════════════════════════ */
         const firebaseConfig = {
             apiKey: "AIzaSyDArJnFmo2Ma9EFbGeHCL39IQap6dOzcOM",
@@ -218,10 +463,11 @@
             appId: "1:692470692095:web:da383ef62a3bd45a23b4ca"
         };
         firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
         const database = firebase.database();
 
         /* ═════════════════════════════════
-           2. 과목 결정 (학생 페이지와 동일한 규칙)
+           3. 과목 결정
         ═════════════════════════════════ */
         const VALID_SUBJECTS = ['통합사회', '사회와 문화'];
         const urlParams = new URLSearchParams(window.location.search);
@@ -229,18 +475,42 @@
         const subj = VALID_SUBJECTS.includes(requested) ? requested : VALID_SUBJECTS[0];
         document.getElementById('subj').textContent = subj;
 
-        // 학생 페이지의 sanitizeKey와 반드시 동일해야 경로가 맞습니다.
         function sanitizeKey(str) {
             return String(str).replace(/[.#$\[\]\/\s]/g, '_');
         }
         const subjKey = sanitizeKey(subj);
 
         /* ═════════════════════════════════
-           3. 데이터 저장소 (세션 + 제출 이력)
-           두 경로 중 어느 쪽이 갱신되어도 표를 다시 그림
+           4. 교사 로그인 상태 확인
+           (데이터 수정 권한 = 로그인 필요)
         ═════════════════════════════════ */
-        let sessions = {};     // sessions/{과목}      → 접속·이탈 상태
-        let evaluations = {};  // evaluations/{과목}   → 제출 이력(누적)
+        let teacherLoggedIn = false;
+
+        function updateLoginNote() {
+            const note = document.getElementById('login-note');
+            if (teacherLoggedIn) {
+                note.textContent = '';
+            } else {
+                note.textContent = '⚠️ 채점 결과를 저장하려면 교사 구글 로그인이 필요합니다. 채점 버튼을 누르면 로그인 창이 뜹니다.';
+            }
+        }
+
+        auth.onAuthStateChanged((user) => {
+            teacherLoggedIn = !!user;
+            updateLoginNote();
+        });
+
+        function ensureTeacherLogin() {
+            if (teacherLoggedIn) return Promise.resolve();
+            const provider = new firebase.auth.GoogleAuthProvider();
+            return auth.signInWithPopup(provider);
+        }
+
+        /* ═════════════════════════════════
+           5. 실시간 데이터 구독
+        ═════════════════════════════════ */
+        let sessions = {};
+        let evaluations = {};
 
         database.ref(`sessions/${subjKey}`).on('value', (snap) => {
             sessions = snap.val() || {};
@@ -250,12 +520,155 @@
         database.ref(`evaluations/${subjKey}`).on('value', (snap) => {
             evaluations = snap.val() || {};
             renderTable();
+            maybeAutoGrade();
         });
 
         /* ═════════════════════════════════
-           4. 렌더링 헬퍼
-           textContent 사용 → 학생 입력이 HTML로
-           실행되지 않도록 방지 (XSS 차단)
+           6. Gemini AI 채점 (핵심 신규 기능)
+           - API 키는 이 브라우저(localStorage)에만 저장
+           - 성취기준·성취수준을 기준으로 점수(10점 만점),
+             성취수준(A~E), 피드백을 생성해 Firebase에 기록
+        ═════════════════════════════════ */
+        const keyInput = document.getElementById('api-key');
+        keyInput.value = localStorage.getItem('gemini_api_key') || '';
+
+        document.getElementById('save-key-btn').addEventListener('click', () => {
+            localStorage.setItem('gemini_api_key', keyInput.value.trim());
+            setGradingStatus('🔑 API 키가 이 컴퓨터에 저장되었습니다.');
+        });
+
+        function setGradingStatus(msg) {
+            document.getElementById('grading-status').textContent = msg;
+        }
+
+        async function callGemini(answer) {
+            const apiKey = (keyInput.value || '').trim();
+            if (!apiKey) throw new Error('API 키를 먼저 입력하고 [키 저장]을 눌러주세요.');
+
+            const prompt = `당신은 고등학교 사회과 서술형 평가를 채점하는 교사입니다.
+
+[문항]
+${SUBJECT_DATA[subj].question}
+
+[채점 기준]
+${SUBJECT_DATA[subj].standards}
+
+[학생 답안]
+${answer}
+
+위 성취기준과 성취수준 A~E를 근거로 학생 답안을 채점하세요.
+반드시 아래 형식의 JSON만 출력하세요. 다른 설명이나 마크다운 기호는 절대 쓰지 마세요.
+{"score": 0에서 10 사이의 정수, "level": "A"|"B"|"C"|"D"|"E", "feedback": "학생에게 존댓말로 전하는 2~3문장의 구체적 피드백. 잘한 점 1가지와 보완할 점 1가지를 포함"}`;
+
+            const res = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.2 }
+                    })
+                }
+            );
+
+            if (!res.ok) {
+                const errBody = await res.json().catch(() => ({}));
+                const msg = errBody?.error?.message || `HTTP ${res.status}`;
+                throw new Error('Gemini 호출 실패: ' + msg);
+            }
+
+            const data = await res.json();
+            const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '')
+                .replace(/```json|```/g, '').trim();
+            const parsed = JSON.parse(text);
+            if (typeof parsed.score !== 'number' || !parsed.level || !parsed.feedback) {
+                throw new Error('채점 결과 형식이 올바르지 않습니다.');
+            }
+            return parsed;
+        }
+
+        // 미채점(채점대기 또는 채점실패) 제출 목록 수집
+        function collectPending() {
+            const list = [];
+            Object.entries(evaluations).forEach(([studentKey, evalData]) => {
+                const subs = evalData.submissions || {};
+                Object.entries(subs).forEach(([subId, sub]) => {
+                    if (sub.status === '채점대기' || sub.status === '채점실패') {
+                        list.push({ studentKey, subId, sub });
+                    }
+                });
+            });
+            return list;
+        }
+
+        let isGrading = false;
+
+        async function runGrading() {
+            if (isGrading) return;
+            const pending = collectPending();
+            if (pending.length === 0) {
+                setGradingStatus('✅ 채점할 대기 답안이 없습니다.');
+                return;
+            }
+
+            try {
+                await ensureTeacherLogin();
+            } catch (e) {
+                setGradingStatus('❌ 교사 로그인이 취소되어 채점을 중단했습니다.');
+                return;
+            }
+
+            isGrading = true;
+            const btn = document.getElementById('grade-btn');
+            btn.disabled = true;
+            let done = 0, failed = 0;
+
+            for (const { studentKey, subId, sub } of pending) {
+                setGradingStatus(`🤖 채점 중... (${done + failed + 1} / ${pending.length})`);
+                const ref = database.ref(`evaluations/${subjKey}/${studentKey}/submissions/${subId}`);
+                try {
+                    const result = await callGemini(sub.answer);
+                    await ref.update({
+                        status: '채점완료',
+                        score: `${result.score} / 10점`,
+                        level: result.level,
+                        feedback: result.feedback,
+                        gradedAt: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    done++;
+                } catch (e) {
+                    failed++;
+                    await ref.update({
+                        status: '채점실패',
+                        feedback: '자동 채점에 실패했습니다: ' + e.message
+                    }).catch(() => { });
+                    // 키가 아예 잘못된 경우엔 반복해도 소용없으니 중단
+                    if (String(e.message).includes('API 키') || String(e.message).includes('API key')) {
+                        setGradingStatus('❌ ' + e.message);
+                        break;
+                    }
+                }
+            }
+
+            setGradingStatus(`🏁 채점 완료: 성공 ${done}건${failed ? `, 실패 ${failed}건 (다시 실행하면 재시도됩니다)` : ''}`);
+            isGrading = false;
+            btn.disabled = false;
+        }
+
+        document.getElementById('grade-btn').addEventListener('click', runGrading);
+
+        // 자동 채점: 새 제출이 감지되면 자동 실행 (체크박스 켜져 있을 때만)
+        let autoGradeTimer = null;
+        function maybeAutoGrade() {
+            if (!document.getElementById('auto-grade').checked) return;
+            if (collectPending().length === 0) return;
+            clearTimeout(autoGradeTimer);
+            autoGradeTimer = setTimeout(runGrading, 1500); // 연속 제출을 묶어서 처리
+        }
+
+        /* ═════════════════════════════════
+           7. 렌더링 (textContent 사용 → XSS 차단)
         ═════════════════════════════════ */
         function makeCell(text, className) {
             const td = document.createElement('td');
@@ -270,77 +683,110 @@
             const dot = document.createElement('span');
             dot.className = 'light-dot';
             const label = document.createElement('span');
-
             const state = session ? session.focusState : null;
-            if (state === 'away') {
-                wrap.className = 'status-light light-away';
-                label.textContent = '이탈 중!';
-            } else if (state === 'active') {
-                wrap.className = 'status-light light-active';
-                label.textContent = '응시 중';
-            } else if (state === 'offline') {
-                wrap.className = 'status-light light-offline';
-                label.textContent = '접속 종료';
-            } else {
-                wrap.className = 'status-light light-offline';
-                label.textContent = '미접속';
-            }
+            if (state === 'away') { wrap.className = 'status-light light-away'; label.textContent = '이탈 중!'; }
+            else if (state === 'active') { wrap.className = 'status-light light-active'; label.textContent = '응시 중'; }
+            else if (state === 'offline') { wrap.className = 'status-light light-offline'; label.textContent = '접속 종료'; }
+            else { wrap.className = 'status-light light-offline'; label.textContent = '미접속'; }
             wrap.appendChild(dot);
             wrap.appendChild(label);
             td.appendChild(wrap);
-
             const count = session ? Number(session.awayCount || 0) : 0;
             if (count > 0) {
-                const countText = document.createElement('span');
-                countText.className = 'away-count-text';
-                countText.textContent = `누적 이탈 ${count}회`;
-                td.appendChild(countText);
+                const c = document.createElement('span');
+                c.className = 'away-count-text';
+                c.textContent = `누적 이탈 ${count}회`;
+                td.appendChild(c);
             }
             return td;
         }
 
-        // submissions 객체에서 가장 최근 제출을 찾고 총 횟수를 셈
-        function getLatestSubmission(evalData) {
-            if (!evalData || !evalData.submissions) return { latest: null, count: 0 };
-            const list = Object.values(evalData.submissions);
-            list.sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
-            return { latest: list[list.length - 1], count: list.length };
+        function getSubmissionList(evalData) {
+            if (!evalData || !evalData.submissions) return [];
+            return Object.values(evalData.submissions)
+                .sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
         }
 
         /* ═════════════════════════════════
-           5. 표 그리기
-           세션(접속만 한 학생)과 제출 데이터를 합쳐서
-           학생 1명당 1행으로 표시
+           8. 제출 이력 모달 (신규 기능)
+        ═════════════════════════════════ */
+        function openHistory(studentKey, name) {
+            const list = getSubmissionList(evaluations[studentKey]);
+            const body = document.getElementById('history-body');
+            body.innerHTML = '';
+            document.getElementById('history-title').textContent =
+                `📚 ${name} 학생의 제출 이력 (총 ${list.length}회)`;
+
+            list.forEach((sub, idx) => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+
+                const meta = document.createElement('div');
+                meta.className = 'h-meta';
+                const left = document.createElement('span');
+                left.textContent = `📝 ${idx + 1}회차 제출`;
+                const right = document.createElement('span');
+                const t = sub.submittedAt ? new Date(sub.submittedAt) : null;
+                right.textContent = t
+                    ? `${t.getMonth() + 1}월 ${t.getDate()}일 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+                    : '';
+                meta.appendChild(left);
+                meta.appendChild(right);
+
+                const ans = document.createElement('div');
+                ans.className = 'h-answer';
+                ans.textContent = sub.answer || '';
+
+                item.appendChild(meta);
+                item.appendChild(ans);
+
+                const result = document.createElement('div');
+                result.className = 'h-result';
+                if (sub.status === '채점완료') {
+                    result.textContent = `✅ ${sub.score}${sub.level ? ` (수준 ${sub.level})` : ''} — ${sub.feedback || ''}`;
+                } else {
+                    result.textContent = `⏳ ${sub.status || '채점대기'}`;
+                }
+                item.appendChild(result);
+
+                body.appendChild(item);
+            });
+
+            document.getElementById('history-modal').classList.add('open');
+        }
+
+        document.getElementById('history-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'history-modal') e.target.classList.remove('open');
+        });
+
+        /* ═════════════════════════════════
+           9. 표 그리기
         ═════════════════════════════════ */
         function renderTable() {
             const tbody = document.getElementById('data-list');
             tbody.innerHTML = '';
 
-            // 두 경로의 학생 키 합집합
             const keys = new Set([...Object.keys(sessions), ...Object.keys(evaluations)]);
-
             const rows = [];
             keys.forEach((key) => {
                 const session = sessions[key] || null;
                 const evalData = evaluations[key] || null;
                 const info = (evalData && evalData.info) || session || {};
-                const { latest, count } = getLatestSubmission(evalData);
-                rows.push({ key, session, info, latest, count });
+                const list = getSubmissionList(evalData);
+                rows.push({ key, session, info, latest: list[list.length - 1] || null, count: list.length });
             });
 
-            // 반 → 번호 순 정렬
             rows.sort((a, b) => {
                 const c = String(a.info.class || '').localeCompare(String(b.info.class || ''), 'ko');
                 if (c !== 0) return c;
                 return Number(a.info.number || 0) - Number(b.info.number || 0);
             });
 
-            // 상단 요약 수치
             document.getElementById('total-count').textContent = rows.length;
-            document.getElementById('submitted-count').textContent =
-                rows.filter((r) => r.count > 0).length;
+            document.getElementById('submitted-count').textContent = rows.filter((r) => r.count > 0).length;
             document.getElementById('away-now-count').textContent =
                 rows.filter((r) => r.session && r.session.focusState === 'away').length;
+            document.getElementById('pending-count').textContent = collectPending().length;
 
             if (rows.length === 0) {
                 const tr = document.createElement('tr');
@@ -353,25 +799,25 @@
                 return;
             }
 
-            rows.forEach(({ session, info, latest, count }) => {
+            rows.forEach(({ key, session, info, latest, count }) => {
                 const tr = document.createElement('tr');
                 if (session && session.focusState === 'away') tr.className = 'row-away';
 
-                const gradeCell = makeCell(info.grade ? `${info.grade}학년` : '-');
-                gradeCell.style.fontWeight = 'bold';
-                tr.appendChild(gradeCell);
-
+                const g = makeCell(info.grade ? `${info.grade}학년` : '-');
+                g.style.fontWeight = 'bold';
+                tr.appendChild(g);
                 tr.appendChild(makeCell(info.class || '-'));
                 tr.appendChild(makeCell(info.number ? `${info.number}번` : '-'));
                 tr.appendChild(makeCell(info.name || '-'));
                 tr.appendChild(makeStatusLightCell(session));
 
-                // 최신 답안 + 제출 횟수 배지
+                // 최신 답안 + 이력 보기 배지
                 const answerCell = makeCell(latest ? latest.answer : '아직 제출 전입니다.', 'answer-cell');
                 if (count > 0) {
                     const badge = document.createElement('span');
                     badge.className = 'attempt-badge';
-                    badge.textContent = `총 ${count}회 제출 (이력 보관 중)`;
+                    badge.textContent = `📚 총 ${count}회 제출 — 이력 보기`;
+                    badge.addEventListener('click', () => openHistory(key, info.name || '학생'));
                     answerCell.appendChild(document.createElement('br'));
                     answerCell.appendChild(badge);
                 }
@@ -379,15 +825,26 @@
 
                 // 채점 현황
                 const statusCell = document.createElement('td');
-                const statusBadge = document.createElement('span');
-                statusBadge.className = latest ? 'badge-wait' : 'badge-none';
-                statusBadge.textContent = latest ? (latest.status || '') : '미제출';
-                statusCell.appendChild(statusBadge);
+                const sb = document.createElement('span');
+                if (!latest) { sb.className = 'badge-none'; sb.textContent = '미제출'; }
+                else if (latest.status === '채점완료') { sb.className = 'badge-done'; sb.textContent = '채점완료'; }
+                else if (latest.status === '채점실패') { sb.className = 'badge-fail'; sb.textContent = '채점실패'; }
+                else { sb.className = 'badge-wait'; sb.textContent = latest.status || '채점대기'; }
+                statusCell.appendChild(sb);
                 tr.appendChild(statusCell);
 
-                tr.appendChild(makeCell(latest ? latest.score : '-', 'score-cell'));
-                tr.appendChild(makeCell(latest ? latest.feedback : '-', 'feedback-cell'));
+                // 점수 / 수준
+                const scoreCell = makeCell(latest ? latest.score : '-', 'score-cell');
+                if (latest && latest.level) {
+                    const lv = document.createElement('span');
+                    lv.className = 'level-badge';
+                    lv.textContent = `수준 ${latest.level}`;
+                    scoreCell.appendChild(document.createElement('br'));
+                    scoreCell.appendChild(lv);
+                }
+                tr.appendChild(scoreCell);
 
+                tr.appendChild(makeCell(latest ? latest.feedback : '-', 'feedback-cell'));
                 tbody.appendChild(tr);
             });
         }
