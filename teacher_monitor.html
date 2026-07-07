@@ -242,6 +242,45 @@
             font-size: 12px;
         }
 
+        /* 문항별 답안 토글 */
+        .q-answer-toggle {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 6px 10px;
+            margin: 3px 0;
+            font-size: 13px;
+            font-weight: bold;
+            color: #1e3a8a;
+            cursor: pointer;
+        }
+
+        .q-answer-toggle:hover {
+            background: #eff6ff;
+        }
+
+        .q-answer-toggle.open {
+            background: #eff6ff;
+            border-color: #93c5fd;
+        }
+
+        .q-answer-body {
+            text-align: left;
+            font-size: 13px;
+            color: #334155;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            padding: 8px 10px;
+            margin: -3px 0 4px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         .attempt-badge {
             display: inline-block;
             background: #eff6ff;
@@ -432,6 +471,13 @@
             <button class="panel-btn" id="q-reset-btn" style="background:#64748b;">기본 예시로 되돌리기</button>
             <span class="grading-status" id="q-status"></span>
             <div id="q-editor" style="display:none; width:100%; margin-top:8px;"></div>
+        </div>
+
+        <!-- 시험 모드(이탈 감지) 패널 -->
+        <div class="grading-panel" style="border-color:#fecaca; background:#fef2f2;">
+            <label>🛡️ 시험 모드:</label>
+            <button class="panel-btn" id="mode-btn" style="background:#dc2626;">불러오는 중...</button>
+            <span class="grading-status" id="mode-desc"></span>
         </div>
 
         <!-- AI 채점 제어판 -->
@@ -643,7 +689,7 @@
                 setQStatus('❌ 로그인이 취소되어 저장하지 못했습니다.');
                 return;
             }
-            database.ref(`questions/${subjKey}`).set({
+            database.ref(`questions/${subjKey}`).update({
                 items: cleaned,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
             }).then(() => {
@@ -653,13 +699,47 @@
             });
         });
 
-        // 저장된 문항이 있으면 편집기에 불러오기
+        // 저장된 문항·시험 모드가 있으면 불러오기 (실시간 반영)
+        let currentExamMode = 'lock';   // lock: 이탈 감지 켬 / free: 검색 허용
+
         database.ref(`questions/${subjKey}`).on('value', (snap) => {
             const data = snap.val();
             if (data && Array.isArray(data.items) && data.items.length > 0) {
                 editorQuestions = data.items.slice(0, 10);
             }
+            currentExamMode = (data && data.examMode === 'free') ? 'free' : 'lock';
+            renderModeButton();
             renderQuestionEditor();
+        });
+
+        /* ═════════════════════════════════
+           4-1. 시험 모드 전환 (이탈 감지 켜기/끄기)
+           - questions/{과목}/examMode 에 저장 → 학생 화면에 실시간 반영
+        ═════════════════════════════════ */
+        function renderModeButton() {
+            const btn = document.getElementById('mode-btn');
+            const desc = document.getElementById('mode-desc');
+            if (currentExamMode === 'lock') {
+                btn.textContent = '🔒 화면 이탈 금지 모드 (누르면 검색 허용으로 전환)';
+                btn.style.background = '#dc2626';
+                desc.textContent = '학생이 다른 탭·창으로 이동하면 경고가 뜨고 이탈로 기록됩니다.';
+            } else {
+                btn.textContent = '🔓 검색 허용 모드 (누르면 이탈 금지로 전환)';
+                btn.style.background = '#16a34a';
+                desc.textContent = '학생이 자유롭게 검색할 수 있으며, 화면을 나가도 이탈로 기록되지 않습니다.';
+            }
+        }
+
+        document.getElementById('mode-btn').addEventListener('click', async () => {
+            try {
+                await ensureTeacherLogin();
+            } catch (e) {
+                alert('모드 변경에는 교사 구글 로그인이 필요합니다.');
+                return;
+            }
+            const next = currentExamMode === 'lock' ? 'free' : 'lock';
+            database.ref(`questions/${subjKey}`).update({ examMode: next })
+                .catch((err) => alert('모드 변경 실패: ' + err.message));
         });
 
         renderQuestionEditor();
@@ -750,8 +830,8 @@ ${sub.answer}
                 }
 
                 const errBody = await res.json().catch(() => ({}));
-                const msg = errBody?.error?.message || `HTTP ${res.status}`;
-                lastError = `[${model}] ${msg}`;
+                const msg = errBody?.error?.message || '';
+                lastError = `[${model}] HTTP ${res.status} — ${msg}`;
 
                 // 키 자체가 잘못된 경우(400/403)는 모델을 바꿔도 소용없으니 즉시 중단
                 if (res.status === 400 || res.status === 403) {
@@ -770,6 +850,29 @@ ${sub.answer}
                 throw new Error('채점 결과 형식이 올바르지 않습니다.');
             }
             return parsed;
+        }
+
+        // 채점 실패 원인을 선생님이 이해하기 쉬운 한글로 번역
+        function explainGradingError(e) {
+            const m = String((e && e.message) || e);
+            if (m.includes('API 키를 먼저')) return 'API 키가 비어 있어요. 키를 입력하고 [키 저장]을 눌러주세요.';
+            if (m.includes('API_KEY_INVALID') || m.includes('API key not valid') || m.includes('HTTP 400'))
+                return 'API 키가 올바르지 않아요. aistudio.google.com에서 키를 다시 복사해 붙여넣어 주세요.';
+            if (m.includes('Gemini 호출 실패') && m.includes('HTTP 403'))
+                return 'API 키에 권한이 없어요. 키가 삭제되었거나 다른 프로젝트의 키일 수 있어요.';
+            if (m.includes('HTTP 429') || m.toLowerCase().includes('quota') || m.includes('RESOURCE_EXHAUSTED'))
+                return '무료 사용량 한도(분당 요청 수)에 잠시 걸렸어요. 1~2분 뒤 채점 버튼을 다시 눌러주세요.';
+            if (m.includes('HTTP 404'))
+                return 'AI 모델을 찾지 못했어요. 모델이 변경·종료되었을 수 있으니 알려주세요.';
+            if (m.includes('HTTP 5') || m.toLowerCase().includes('overloaded') || m.includes('UNAVAILABLE'))
+                return 'Gemini 서버가 지금 혼잡해요. 잠시 후 다시 실행해 주세요.';
+            if (m.includes('Failed to fetch') || m.includes('NetworkError'))
+                return '인터넷 연결 문제로 Gemini에 접속하지 못했어요. 네트워크를 확인해 주세요.';
+            if (m.toUpperCase().includes('PERMISSION_DENIED'))
+                return 'Firebase 창고에 결과를 기록할 권한이 없어요. 데이터베이스 규칙을 확인해 주세요.';
+            if (m.includes('JSON') || m.includes('Unexpected token') || m.includes('형식이 올바르지'))
+                return 'AI가 정해진 형식으로 답하지 않았어요. 다시 실행하면 대부분 해결됩니다.';
+            return m;   // 알 수 없는 오류는 원문 그대로 표시
         }
 
         // 미채점(채점대기 또는 채점실패) 제출 목록 수집
@@ -806,7 +909,7 @@ ${sub.answer}
             isGrading = true;
             const btn = document.getElementById('grade-btn');
             btn.disabled = true;
-            let done = 0, failed = 0;
+            let done = 0, failed = 0, lastFailReason = '';
 
             for (const { studentKey, subId, sub } of pending) {
                 setGradingStatus(`🤖 채점 중... (${done + failed + 1} / ${pending.length})`);
@@ -823,19 +926,23 @@ ${sub.answer}
                     done++;
                 } catch (e) {
                     failed++;
+                    lastFailReason = explainGradingError(e);
                     await ref.update({
                         status: '채점실패',
-                        feedback: '자동 채점에 실패했습니다: ' + e.message
+                        feedback: '⚠️ 채점 실패 원인: ' + lastFailReason
                     }).catch(() => { });
                     // 키가 아예 잘못된 경우엔 반복해도 소용없으니 중단
                     if (String(e.message).includes('API 키') || String(e.message).includes('API key')) {
-                        setGradingStatus('❌ ' + e.message);
+                        setGradingStatus('❌ ' + lastFailReason);
                         break;
                     }
                 }
             }
 
-            setGradingStatus(`🏁 채점 완료: 성공 ${done}건${failed ? `, 실패 ${failed}건 (다시 실행하면 재시도됩니다)` : ''}`);
+            setGradingStatus(
+                `🏁 채점 완료: 성공 ${done}건` +
+                (failed ? `, 실패 ${failed}건 — 원인: ${lastFailReason} (다시 실행하면 재시도됩니다)` : '')
+            );
             isGrading = false;
             btn.disabled = false;
         }
@@ -949,6 +1056,8 @@ ${sub.answer}
         /* ═════════════════════════════════
            9. 표 그리기
         ═════════════════════════════════ */
+        const expandedAnswers = new Set();   // 어떤 학생의 어떤 문항이 펼쳐져 있는지 기억
+
         function renderTable() {
             const tbody = document.getElementById('data-list');
             tbody.innerHTML = '';
@@ -960,11 +1069,14 @@ ${sub.answer}
                 const evalData = evaluations[key] || null;
                 const info = (evalData && evalData.info) || session || {};
                 const list = getSubmissionList(evalData);
-                rows.push({ key, session, info, latest: list[list.length - 1] || null, count: list.length });
+                rows.push({ key, session, info, list, latest: list[list.length - 1] || null, count: list.length });
             });
 
             rows.sort((a, b) => {
-                const c = String(a.info.class || '').localeCompare(String(b.info.class || ''), 'ko');
+                // ① 학년 → ② 반(숫자를 인식해 2반이 10반보다 앞) → ③ 번호 순으로 정렬
+                const g = Number(a.info.grade || 0) - Number(b.info.grade || 0);
+                if (g !== 0) return g;
+                const c = String(a.info.class || '').localeCompare(String(b.info.class || ''), 'ko', { numeric: true });
                 if (c !== 0) return c;
                 return Number(a.info.number || 0) - Number(b.info.number || 0);
             });
@@ -988,7 +1100,7 @@ ${sub.answer}
                 return;
             }
 
-            rows.forEach(({ key, session, info, latest, count }) => {
+            rows.forEach(({ key, session, info, list, latest, count }) => {
                 const tr = document.createElement('tr');
                 if (session && session.focusState === 'away') tr.className = 'row-away';
 
@@ -1000,17 +1112,43 @@ ${sub.answer}
                 tr.appendChild(makeCell(info.name || '-'));
                 tr.appendChild(makeStatusLightCell(session));
 
-                // 최신 답안 + 이력 보기 배지
-                const answerText = latest
-                    ? (latest.questionNo ? `[문항 ${latest.questionNo}] ${latest.answer}` : latest.answer)
-                    : '아직 제출 전입니다.';
-                const answerCell = makeCell(answerText, 'answer-cell');
-                if (count > 0) {
+                // 답안 칸: 문항별 토글 (기본은 접힌 상태 → 표가 깔끔해짐)
+                const answerCell = document.createElement('td');
+                answerCell.className = 'answer-cell';
+
+                if (count === 0) {
+                    answerCell.textContent = '아직 제출 전입니다.';
+                } else {
+                    // 문항 번호별로 가장 최근 답안만 추출 (같은 문항 재제출 시 최신 것)
+                    const latestByQ = {};
+                    list.forEach((sub) => { latestByQ[sub.questionNo || 1] = sub; });
+
+                    Object.keys(latestByQ).map(Number).sort((a, b) => a - b).forEach((qn) => {
+                        const sub = latestByQ[qn];
+                        const tKey = `${key}::${qn}`;
+                        const isOpen = expandedAnswers.has(tKey);
+
+                        const toggle = document.createElement('button');
+                        toggle.className = 'q-answer-toggle' + (isOpen ? ' open' : '');
+                        toggle.textContent = `${isOpen ? '▾' : '▸'} 문항 ${qn} 답안 ${isOpen ? '접기' : '보기'}`;
+                        toggle.addEventListener('click', () => {
+                            isOpen ? expandedAnswers.delete(tKey) : expandedAnswers.add(tKey);
+                            renderTable();
+                        });
+                        answerCell.appendChild(toggle);
+
+                        if (isOpen) {
+                            const body = document.createElement('div');
+                            body.className = 'q-answer-body';
+                            body.textContent = sub.answer || '';
+                            answerCell.appendChild(body);
+                        }
+                    });
+
                     const badge = document.createElement('span');
                     badge.className = 'attempt-badge';
                     badge.textContent = `📚 총 ${count}회 제출 — 이력 보기`;
                     badge.addEventListener('click', () => openHistory(key, info.name || '학생'));
-                    answerCell.appendChild(document.createElement('br'));
                     answerCell.appendChild(badge);
                 }
                 tr.appendChild(answerCell);
