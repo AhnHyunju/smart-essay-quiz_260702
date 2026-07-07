@@ -496,8 +496,11 @@
             if (!currentUid) return;
             clearTimeout(draftSaveTimer);
             draftSaveTimer = setTimeout(() => {
+                const d = drafts[qIndex]
+                    ? Object.assign({}, drafts[qIndex], { savedAt: firebase.database.ServerValue.TIMESTAMP })
+                    : null;
                 database.ref(`students/${currentUid}/drafts/${subjKey}/q${qIndex}`)
-                    .set(drafts[qIndex] || null)
+                    .set(d)
                     .catch(() => { });
             }, 800);
         }
@@ -573,6 +576,7 @@
             document.getElementById('quiz-section').classList.remove('hidden');
             currentUid = user.uid;
             isLoggedIn = true;
+            forceEnded = false;   // 교사 종료 후 재로그인 시 정상 응시 가능하도록 초기화
 
             // ① 이전에 저장해 둔 학생 정보(학년·반·번호·본명)가 있으면 자동으로 채움
             database.ref(`students/${currentUid}/profile`).once('value').then((snap) => {
@@ -598,19 +602,31 @@
 
         function restoreSavedWork() {
             if (!currentUid) return;
-            database.ref(`students/${currentUid}/drafts/${subjKey}`).once('value').then((snap) => {
-                const saved = snap.val() || {};
-                Object.entries(saved).forEach(([k, v]) => {
-                    const qi = Number(k.replace('q', ''));
-                    if (!Number.isNaN(qi) && v) drafts[qi] = v;
-                });
-                loadDraft(currentQ);
-            }).catch(() => { /* 복원 실패 시 새로 작성 */ });
+            // 교사가 데이터를 초기화한 시각(resetAt)을 먼저 확인 →
+            // 그 이전에 저장된 글·제출표시는 무시하고 새로 시작
+            database.ref(`questions/${subjKey}/resetAt`).once('value').then((rSnap) => {
+                const resetAt = Number(rSnap.val() || 0);
 
-            database.ref(`students/${currentUid}/submitted/${subjKey}`).once('value').then((snap) => {
-                const done = snap.val() || {};
-                Object.keys(done).forEach((k) => submittedQ.add(Number(k)));
-                renderQuestion();
+                database.ref(`students/${currentUid}/drafts/${subjKey}`).once('value').then((snap) => {
+                    const saved = snap.val() || {};
+                    Object.entries(saved).forEach(([k, v]) => {
+                        const qi = Number(k.replace('q', ''));
+                        if (Number.isNaN(qi) || !v) return;
+                        if (resetAt && Number(v.savedAt || 0) < resetAt) return;
+                        drafts[qi] = v;
+                    });
+                    loadDraft(currentQ);
+                }).catch(() => { /* 복원 실패 시 새로 작성 */ });
+
+                database.ref(`students/${currentUid}/submitted/${subjKey}`).once('value').then((snap) => {
+                    const done = snap.val() || {};
+                    Object.entries(done).forEach(([k, v]) => {
+                        const t = (v === true) ? 0 : Number(v || 0);   // 예전 버전은 true로 저장됨
+                        if (resetAt && t < resetAt) return;
+                        submittedQ.add(Number(k));
+                    });
+                    renderQuestion();
+                }).catch(() => { });
             }).catch(() => { });
         }
 
@@ -662,22 +678,27 @@
         }
 
         // 학생 정보가 바뀔 때마다 세션 노드를 (재)등록
+        let forceEnded = false;             // 교사가 시험을 종료시켰는지
+        let attachedSessionPath = null;     // 종료 신호 감시가 붙어있는 세션 경로
+
         function syncSession() {
-            if (!isLoggedIn) return;
+            if (!isLoggedIn || forceEnded) return;
             const key = getStudentKey();
             if (!key) return;
 
             const newRef = database.ref(`sessions/${subjKey}/${key}`);
+            const isNewPath = attachedSessionPath !== newRef.toString();
 
             // 학번 정보가 바뀌어 키가 달라졌다면 이전 세션 정리
             if (sessionRef && sessionRef.toString() !== newRef.toString()) {
                 sessionRef.onDisconnect().cancel();
+                sessionRef.child('forceLogout').off();
                 sessionRef.remove();
             }
             sessionRef = newRef;
 
             const { grade, sClass, num, name } = getStudentInfo();
-            sessionRef.update({
+            const payload = {
                 grade: grade,
                 class: sClass,
                 number: num,
@@ -685,12 +706,42 @@
                 focusState: isAway ? 'away' : 'active',
                 awayCount: awayCount,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
-            });
+            };
+            // 새로 등록할 때는 예전에 남아있던 종료 신호를 지우고 시작
+            if (isNewPath) payload.forceLogout = null;
+            sessionRef.update(payload);
+
             // 창을 닫거나 인터넷이 끊기면 자동으로 '접속종료' 처리
             sessionRef.onDisconnect().update({
                 focusState: 'offline',
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
             });
+
+            // 교사가 [⏹ 접속 종료]를 누르면 즉시 로그아웃되도록 감시
+            if (isNewPath) {
+                attachedSessionPath = newRef.toString();
+                sessionRef.child('forceLogout').on('value', (snap) => {
+                    if (snap.val() === true) endByTeacher();
+                });
+            }
+        }
+
+        // 교사가 시험을 종료시켰을 때: 자동 로그아웃 + 첫 화면으로
+        function endByTeacher() {
+            if (forceEnded) return;
+            forceEnded = true;
+            isLoggedIn = false;
+            if (sessionRef) {
+                sessionRef.onDisconnect().cancel();
+                sessionRef.child('forceLogout').off();
+            }
+            attachedSessionPath = null;
+            clearTimeout(bannerTimer);
+            document.getElementById('warning-banner').classList.remove('show');
+            auth.signOut().catch(() => { });
+            document.getElementById('quiz-section').classList.add('hidden');
+            document.getElementById('login-section').classList.remove('hidden');
+            alert('선생님이 시험을 종료했습니다. 수고했어요! 🙌\n작성 중이던 내용은 임시저장되어 있어서, 다음에 로그인하면 이어서 쓸 수 있습니다.');
         }
 
         ['s-grade', 's-class', 's-number', 's-name'].forEach((id) => {
@@ -891,7 +942,7 @@
                 submittedQ.add(currentQ);          // 문항 탭에 제출 완료(✓) 표시
                 if (currentUid) {
                     database.ref(`students/${currentUid}/submitted/${subjKey}/${currentQ}`)
-                        .set(true).catch(() => { });
+                        .set(firebase.database.ServerValue.TIMESTAMP).catch(() => { });
                 }
                 saveDraft();
                 renderQuestion();

@@ -191,6 +191,7 @@
             font-size: 13px;
             color: #475569;
             max-width: 260px;
+            white-space: pre-line;   /* 1./2./3. 항목이 줄바꿈되어 보이도록 */
         }
 
         .score-cell {
@@ -240,6 +241,61 @@
             padding: 4px 8px;
             border-radius: 4px;
             font-size: 12px;
+        }
+
+        /* 접속 종료 버튼 */
+        .end-session-btn {
+            margin-top: 5px;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 4px 9px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .end-session-btn:hover {
+            background: #991b1b;
+        }
+
+        /* 개별 채점 메뉴 */
+        .grade-menu-toggle {
+            margin-top: 6px;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 5px;
+            padding: 3px 8px;
+            font-size: 12px;
+            color: #334155;
+            cursor: pointer;
+        }
+
+        .grade-menu-toggle:hover {
+            background: #eff6ff;
+        }
+
+        .mini-grade-btn {
+            display: block;
+            width: 100%;
+            margin-top: 4px;
+            background: #7c3aed;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 8px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .mini-grade-btn.regrade {
+            background: #c2410c;
+        }
+
+        .mini-grade-btn:hover {
+            opacity: 0.85;
         }
 
         /* 문항별 답안 토글 */
@@ -432,6 +488,7 @@
             color: #475569;
             border-top: 1px dashed #cbd5e1;
             padding-top: 8px;
+            white-space: pre-line;   /* 1./2./3. 항목 줄바꿈 표시 */
         }
 
         .close-btn {
@@ -487,11 +544,20 @@
                 placeholder="Gemini API 키를 붙여넣으세요 (이 컴퓨터에만 저장됩니다)">
             <button class="panel-btn" id="save-key-btn">키 저장</button>
             <button class="panel-btn grade" id="grade-btn">⚡ 미채점 답안 AI 채점 실행</button>
+            <button class="panel-btn" id="regrade-all-btn" style="background:#c2410c;">🔄 전체 재채점</button>
             <label class="auto-grade-label">
                 <input type="checkbox" id="auto-grade"> 새 제출 자동 채점
             </label>
             <span class="grading-status" id="grading-status"></span>
             <span class="login-note" id="login-note"></span>
+        </div>
+
+        <!-- 데이터 관리 패널 -->
+        <div class="grading-panel" style="border-color:#e9d5ff; background:#faf5ff;">
+            <label>📦 데이터 관리:</label>
+            <button class="panel-btn" id="download-btn" style="background:#7c3aed;">⬇️ 전체 답안 다운로드 (엑셀용)</button>
+            <button class="panel-btn" id="reset-btn" style="background:#b91c1c;">🗑️ 학생 데이터 초기화</button>
+            <span class="grading-status" id="data-status"></span>
         </div>
 
         <div class="table-scroll">
@@ -804,7 +870,7 @@ ${sub.answer}
 
 위 성취기준과 성취수준 A~E를 근거로 학생 답안을 채점하세요.
 반드시 아래 형식의 JSON만 출력하세요. 다른 설명이나 마크다운 기호는 절대 쓰지 마세요.
-{"score": 0에서 10 사이의 정수, "level": "A"|"B"|"C"|"D"|"E", "feedback": "학생에게 존댓말로 전하는 2~3문장의 구체적 피드백. 잘한 점 1가지와 보완할 점 1가지를 포함"}`;
+{"score": 0에서 10 사이의 정수, "level": "A"|"B"|"C"|"D"|"E", "final": "답안 전체에 대한 1~2문장의 총평 (학생에게 존댓말로)", "rationale": "왜 이 성취수준으로 판정했는지, 위 성취수준 서술과 학생 답안 내용을 직접 연결하여 설명하는 1~2문장", "strengths": "잘한 점 1~2가지 (존댓말)", "improvements": "보완할 점 1~2가지 (존댓말)"}`;
 
             // 현재 모델부터 시도하고, 모델 문제(404/한도 0 등)면 다음 모델로 자동 전환
             let data = null;
@@ -846,10 +912,25 @@ ${sub.answer}
             const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '')
                 .replace(/```json|```/g, '').trim();
             const parsed = JSON.parse(text);
-            if (typeof parsed.score !== 'number' || !parsed.level || !parsed.feedback) {
+            if (typeof parsed.score !== 'number' || !parsed.level) {
                 throw new Error('채점 결과 형식이 올바르지 않습니다.');
             }
-            return parsed;
+
+            // 피드백을 1.총평 → 2.채점 근거 → 3.잘한 점/보완할 점 순서로 조립
+            let feedback;
+            if (parsed.final || parsed.rationale || parsed.strengths || parsed.improvements) {
+                feedback =
+                    `1️⃣ 최종 피드백: ${parsed.final || '-'}\n` +
+                    `2️⃣ 채점 근거 (수준 ${parsed.level}): ${parsed.rationale || '-'}\n` +
+                    `3️⃣ 잘한 점: ${parsed.strengths || '-'}\n` +
+                    `    보완할 점: ${parsed.improvements || '-'}`;
+            } else if (parsed.feedback) {
+                feedback = parsed.feedback;   // 혹시 AI가 예전 형식으로 답한 경우 대비
+            } else {
+                throw new Error('채점 결과 형식이 올바르지 않습니다.');
+            }
+
+            return { score: parsed.score, level: parsed.level, feedback: feedback };
         }
 
         // 채점 실패 원인을 선생님이 이해하기 쉬운 한글로 번역
@@ -875,10 +956,11 @@ ${sub.answer}
             return m;   // 알 수 없는 오류는 원문 그대로 표시
         }
 
-        // 미채점(채점대기 또는 채점실패) 제출 목록 수집
-        function collectPending() {
+        // 미채점(채점대기 또는 채점실패) 제출 목록 수집 (studentFilter를 주면 그 학생 것만)
+        function collectPending(studentFilter) {
             const list = [];
             Object.entries(evaluations).forEach(([studentKey, evalData]) => {
+                if (studentFilter && studentKey !== studentFilter) return;
                 const subs = evalData.submissions || {};
                 Object.entries(subs).forEach(([subId, sub]) => {
                     if (sub.status === '채점대기' || sub.status === '채점실패') {
@@ -889,13 +971,26 @@ ${sub.answer}
             return list;
         }
 
+        // 상태와 무관하게 모든 제출을 수집 (재채점용, studentFilter를 주면 그 학생 것만)
+        function collectAll(studentFilter) {
+            const list = [];
+            Object.entries(evaluations).forEach(([studentKey, evalData]) => {
+                if (studentFilter && studentKey !== studentFilter) return;
+                const subs = evalData.submissions || {};
+                Object.entries(subs).forEach(([subId, sub]) => {
+                    list.push({ studentKey, subId, sub });
+                });
+            });
+            return list;
+        }
+
         let isGrading = false;
 
-        async function runGrading() {
-            if (isGrading) return;
-            const pending = collectPending();
+        // 주어진 제출 목록을 순서대로 채점 (전체·개별·재채점 모두 이 함수 하나로 처리)
+        async function runGradingList(pending, emptyMsg) {
+            if (isGrading) { setGradingStatus('⏳ 이미 채점이 진행 중입니다. 잠시만요...'); return; }
             if (pending.length === 0) {
-                setGradingStatus('✅ 채점할 대기 답안이 없습니다.');
+                setGradingStatus(emptyMsg || '✅ 채점할 대기 답안이 없습니다.');
                 return;
             }
 
@@ -947,7 +1042,27 @@ ${sub.answer}
             btn.disabled = false;
         }
 
-        document.getElementById('grade-btn').addEventListener('click', runGrading);
+        document.getElementById('grade-btn').addEventListener('click', () => {
+            runGradingList(collectPending());
+        });
+
+        document.getElementById('regrade-all-btn').addEventListener('click', () => {
+            const all = collectAll();
+            if (all.length === 0) { setGradingStatus('재채점할 답안이 없습니다.'); return; }
+            if (!confirm(`⚠️ 모든 답안 ${all.length}건을 처음부터 다시 채점합니다.\n기존 점수·수준·피드백을 새 결과로 덮어씁니다. 계속할까요?`)) return;
+            runGradingList(all);
+        });
+
+        // 개별 학생 채점/재채점 (표의 채점 메뉴 토글에서 호출)
+        function gradeStudent(studentKey, name) {
+            runGradingList(collectPending(studentKey), `✅ ${name} 학생은 채점 대기 중인 답안이 없습니다.`);
+        }
+        function regradeStudent(studentKey, name) {
+            const all = collectAll(studentKey);
+            if (all.length === 0) { setGradingStatus(`${name} 학생은 재채점할 답안이 없습니다.`); return; }
+            if (!confirm(`${name} 학생의 답안 ${all.length}건을 다시 채점합니다.\n기존 결과를 덮어씁니다. 계속할까요?`)) return;
+            runGradingList(all);
+        }
 
         // 자동 채점: 새 제출이 감지되면 자동 실행 (체크박스 켜져 있을 때만)
         let autoGradeTimer = null;
@@ -955,8 +1070,101 @@ ${sub.answer}
             if (!document.getElementById('auto-grade').checked) return;
             if (collectPending().length === 0) return;
             clearTimeout(autoGradeTimer);
-            autoGradeTimer = setTimeout(runGrading, 1500); // 연속 제출을 묶어서 처리
+            autoGradeTimer = setTimeout(() => runGradingList(collectPending()), 1500); // 연속 제출을 묶어서 처리
         }
+
+        /* ═════════════════════════════════
+           6-1. 데이터 관리: 답안 다운로드 & 초기화
+        ═════════════════════════════════ */
+        function setDataStatus(msg) {
+            document.getElementById('data-status').textContent = msg;
+        }
+
+        function csvEscape(v) {
+            return '"' + String(v ?? '').replace(/"/g, '""') + '"';
+        }
+
+        // ⬇️ 모든 제출 답안을 엑셀에서 열리는 CSV 파일로 저장
+        document.getElementById('download-btn').addEventListener('click', () => {
+            const rows = [];
+            Object.entries(evaluations).forEach(([studentKey, evalData]) => {
+                const info = evalData.info || {};
+                getSubmissionList(evalData).forEach((sub, idx) => {
+                    rows.push({ info, sub, idx });
+                });
+            });
+            if (rows.length === 0) {
+                setDataStatus('다운로드할 제출 답안이 아직 없습니다.');
+                return;
+            }
+            rows.sort((a, b) => {
+                const g = Number(a.info.grade || 0) - Number(b.info.grade || 0);
+                if (g !== 0) return g;
+                const c = String(a.info.class || '').localeCompare(String(b.info.class || ''), 'ko', { numeric: true });
+                if (c !== 0) return c;
+                const n = Number(a.info.number || 0) - Number(b.info.number || 0);
+                if (n !== 0) return n;
+                return (a.sub.submittedAt || 0) - (b.sub.submittedAt || 0);
+            });
+
+            const header = ['과목', '학년', '반', '번호', '이름', '제출 회차', '문항 번호', '문항 내용',
+                '답안', '채점 상태', '점수', '성취수준', 'AI 피드백', '제출 시각', '제출 시점 누적 이탈'];
+            const lines = [header.map(csvEscape).join(',')];
+            rows.forEach(({ info, sub, idx }) => {
+                lines.push([
+                    subj, info.grade || '', info.class || '', info.number || '', info.name || '',
+                    idx + 1, sub.questionNo || '', sub.questionText || '', sub.answer || '',
+                    sub.status || '', sub.score || '', sub.level || '', sub.feedback || '',
+                    sub.submittedAt ? new Date(sub.submittedAt).toLocaleString('ko-KR') : '',
+                    sub.awayCountAtSubmit ?? ''
+                ].map(csvEscape).join(','));
+            });
+
+            // 맨 앞의 특수 표시(BOM)는 엑셀이 한글을 바르게 읽게 하는 장치
+            const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            const today = new Date().toISOString().slice(0, 10);
+            a.href = URL.createObjectURL(blob);
+            a.download = `서술형답안_${subj}_${today}.csv`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            setDataStatus(`✅ ${rows.length}건의 답안을 내려받았습니다. 엑셀에서 바로 열립니다.`);
+        });
+
+        // 🗑️ 이 과목의 학생 데이터 전체 초기화 (다운로드 후 사용 권장)
+        document.getElementById('reset-btn').addEventListener('click', async () => {
+            if (!confirm(
+                `⚠️ [${subj}] 과목의 모든 학생 데이터를 지웁니다.\n` +
+                `(응시 기록, 제출 답안, 채점 결과, 학생별 이어쓰기 임시저장)\n\n` +
+                `지우기 전에 [⬇️ 전체 답안 다운로드]로 백업해 두시길 강력히 권장합니다.\n\n계속할까요?`
+            )) return;
+
+            const typed = prompt('실수 방지를 위해, 정말 지우시려면 아래 칸에 "초기화"라고 입력하세요.');
+            if (typed !== '초기화') {
+                setDataStatus('입력이 달라 초기화를 취소했습니다.');
+                return;
+            }
+
+            try {
+                await ensureTeacherLogin();
+            } catch (e) {
+                setDataStatus('❌ 교사 로그인이 취소되어 초기화를 중단했습니다.');
+                return;
+            }
+
+            setDataStatus('🧹 초기화 중...');
+            try {
+                await database.ref(`sessions/${subjKey}`).remove();
+                await database.ref(`evaluations/${subjKey}`).remove();
+                // 학생별 이어쓰기 글은 각자의 서랍에 있어 교사가 직접 못 지우므로,
+                // "이 시각 이전의 임시저장은 무시하라"는 표시를 남겨 새로 시작하게 함
+                await database.ref(`questions/${subjKey}/resetAt`).set(firebase.database.ServerValue.TIMESTAMP);
+                expandedAnswers.clear();
+                setDataStatus('✅ 초기화 완료! 표가 비워졌고, 학생들의 임시저장 글도 새로 시작됩니다.');
+            } catch (err) {
+                setDataStatus('❌ 초기화 실패: ' + err.message);
+            }
+        });
 
         /* ═════════════════════════════════
            7. 렌더링 (textContent 사용 → XSS 차단)
@@ -968,7 +1176,7 @@ ${sub.answer}
             return td;
         }
 
-        function makeStatusLightCell(session) {
+        function makeStatusLightCell(session, studentKey) {
             const td = document.createElement('td');
             const wrap = document.createElement('span');
             const dot = document.createElement('span');
@@ -990,7 +1198,30 @@ ${sub.answer}
                 if (count >= 5) td.appendChild(document.createElement('br'));
                 td.appendChild(c);
             }
+            // 접속 중이거나 이탈 중인 학생에게만 [종료] 버튼 표시
+            if (studentKey && (state === 'active' || state === 'away')) {
+                const endBtn = document.createElement('button');
+                endBtn.className = 'end-session-btn';
+                endBtn.textContent = '⏹ 접속 종료';
+                endBtn.addEventListener('click', () => forceEndStudent(studentKey, session));
+                td.appendChild(document.createElement('br'));
+                td.appendChild(endBtn);
+            }
             return td;
+        }
+
+        // 교사가 학생의 시험 접속을 강제로 종료 (학생 화면은 자동 로그아웃됨)
+        async function forceEndStudent(studentKey, session) {
+            const who = (session && session.name) ? `${session.name} 학생` : '이 학생';
+            if (!confirm(`${who}의 시험 접속을 종료할까요?\n학생 화면은 자동으로 로그아웃되며, 작성 중이던 글은 임시저장되어 있어 다음 접속 때 이어쓸 수 있습니다.`)) return;
+            try {
+                await ensureTeacherLogin();
+            } catch (e) { return; }
+            database.ref(`sessions/${subjKey}/${studentKey}`).update({
+                forceLogout: true,
+                focusState: 'offline',
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            }).catch((err) => alert('종료 실패: ' + err.message));
         }
 
         function getSubmissionList(evalData) {
@@ -1037,7 +1268,7 @@ ${sub.answer}
                 const result = document.createElement('div');
                 result.className = 'h-result';
                 if (sub.status === '채점완료') {
-                    result.textContent = `✅ ${sub.score}${sub.level ? ` (수준 ${sub.level})` : ''} — ${sub.feedback || ''}`;
+                    result.textContent = `✅ ${sub.score}${sub.level ? ` (수준 ${sub.level})` : ''}\n${sub.feedback || ''}`;
                 } else {
                     result.textContent = `⏳ ${sub.status || '채점대기'}`;
                 }
@@ -1057,6 +1288,7 @@ ${sub.answer}
            9. 표 그리기
         ═════════════════════════════════ */
         const expandedAnswers = new Set();   // 어떤 학생의 어떤 문항이 펼쳐져 있는지 기억
+        const expandedGrading = new Set();   // 어떤 학생의 채점 메뉴가 펼쳐져 있는지 기억
 
         function renderTable() {
             const tbody = document.getElementById('data-list');
@@ -1110,7 +1342,7 @@ ${sub.answer}
                 tr.appendChild(makeCell(info.class || '-'));
                 tr.appendChild(makeCell(info.number ? `${info.number}번` : '-'));
                 tr.appendChild(makeCell(info.name || '-'));
-                tr.appendChild(makeStatusLightCell(session));
+                tr.appendChild(makeStatusLightCell(session, key));
 
                 // 답안 칸: 문항별 토글 (기본은 접힌 상태 → 표가 깔끔해짐)
                 const answerCell = document.createElement('td');
@@ -1153,7 +1385,7 @@ ${sub.answer}
                 }
                 tr.appendChild(answerCell);
 
-                // 채점 현황
+                // 채점 현황 + 개별 채점 메뉴 (토글)
                 const statusCell = document.createElement('td');
                 const sb = document.createElement('span');
                 if (!latest) { sb.className = 'badge-none'; sb.textContent = '미제출'; }
@@ -1161,6 +1393,41 @@ ${sub.answer}
                 else if (latest.status === '채점실패') { sb.className = 'badge-fail'; sb.textContent = '채점실패'; }
                 else { sb.className = 'badge-wait'; sb.textContent = latest.status || '채점대기'; }
                 statusCell.appendChild(sb);
+
+                if (count > 0) {
+                    const gKey = `grade::${key}`;
+                    const gOpen = expandedGrading.has(gKey);
+                    const gToggle = document.createElement('button');
+                    gToggle.className = 'grade-menu-toggle';
+                    gToggle.textContent = gOpen ? '⚙️ 채점 메뉴 ▴' : '⚙️ 채점 메뉴 ▾';
+                    gToggle.addEventListener('click', () => {
+                        gOpen ? expandedGrading.delete(gKey) : expandedGrading.add(gKey);
+                        renderTable();
+                    });
+                    statusCell.appendChild(document.createElement('br'));
+                    statusCell.appendChild(gToggle);
+
+                    if (gOpen) {
+                        const name = info.name || '이';
+                        const menu = document.createElement('div');
+
+                        const b1 = document.createElement('button');
+                        b1.className = 'mini-grade-btn';
+                        b1.textContent = '⚡ 이 학생 채점';
+                        b1.title = '이 학생의 미채점(대기·실패) 답안만 채점합니다.';
+                        b1.addEventListener('click', () => gradeStudent(key, name));
+
+                        const b2 = document.createElement('button');
+                        b2.className = 'mini-grade-btn regrade';
+                        b2.textContent = '🔄 이 학생 재채점';
+                        b2.title = '이 학생의 모든 답안을 처음부터 다시 채점합니다.';
+                        b2.addEventListener('click', () => regradeStudent(key, name));
+
+                        menu.appendChild(b1);
+                        menu.appendChild(b2);
+                        statusCell.appendChild(menu);
+                    }
+                }
                 tr.appendChild(statusCell);
 
                 // 점수 / 수준
