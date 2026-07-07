@@ -567,12 +567,18 @@
                     <option value="">전체</option>
                     <option value="1">1학년</option>
                     <option value="2">2학년</option>
-                    <option value="3">3학년</option>
                 </select>
             </label>
             <label style="font-weight:normal;">반
                 <select id="filter-class" class="filter-select">
                     <option value="">전체</option>
+                    <option value="1">1반</option>
+                    <option value="2">2반</option>
+                    <option value="3">3반</option>
+                    <option value="4">4반</option>
+                    <option value="5">5반</option>
+                    <option value="6">6반</option>
+                    <option value="7">7반</option>
                 </select>
             </label>
             <button class="panel-btn" id="filter-reset-btn" style="background:#64748b;">전체 보기</button>
@@ -1246,6 +1252,30 @@
         const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
         let workingModelIndex = 0;
 
+        // AI 응답에서 JSON을 안전하게 꺼내는 공용 함수
+        // (줄바꿈·설명 문구가 섞여도 해석되고, 차단·중단된 응답은 이유를 알려줌)
+        function parseGeminiJson(data) {
+            if (data?.promptFeedback?.blockReason) {
+                throw new Error('AI가 이 내용의 처리를 거부했습니다 (사유: ' + data.promptFeedback.blockReason + ')');
+            }
+            const cand = data?.candidates?.[0];
+            const raw = (cand?.content?.parts?.[0]?.text || '').replace(/```json|```/g, '').trim();
+            if (!raw) {
+                const fr = cand?.finishReason ? ` (finishReason: ${cand.finishReason})` : '';
+                throw new Error('AI 응답이 비어 있습니다' + fr + '. 다시 실행하면 대부분 해결됩니다.');
+            }
+            // 앞뒤 잡담이 붙어도 첫 { 부터 마지막 } 까지만 추출
+            const s = raw.indexOf('{');
+            const e = raw.lastIndexOf('}');
+            const jsonStr = (s >= 0 && e > s) ? raw.slice(s, e + 1) : raw;
+            try {
+                return JSON.parse(jsonStr);
+            } catch (err) {
+                // 문자열 안에 생(生) 줄바꿈 등 제어문자가 들어간 경우 → 공백으로 바꿔 재시도
+                return JSON.parse(jsonStr.replace(/[\u0000-\u001F]+/g, ' '));
+            }
+        }
+
         async function callGemini(sub) {
             const apiKey = (keyInput.value || '').trim();
             if (!apiKey) throw new Error('API 키를 먼저 입력하고 [키 저장]을 눌러주세요.');
@@ -1280,7 +1310,7 @@ ${sub.answer}
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: prompt }] }],
-                            generationConfig: { temperature: 0.2 }
+                            generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
                         })
                     }
                 );
@@ -1305,9 +1335,7 @@ ${sub.answer}
             if (!data) {
                 throw new Error('Gemini 호출 실패 (모든 모델 시도함): ' + lastError);
             }
-            const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '')
-                .replace(/```json|```/g, '').trim();
-            const parsed = JSON.parse(text);
+            const parsed = parseGeminiJson(data);
             if (typeof parsed.score !== 'number' || !parsed.level) {
                 throw new Error('채점 결과 형식이 올바르지 않습니다.');
             }
@@ -1407,7 +1435,14 @@ ${sub.answer}
                 setGradingStatus(`🤖 채점 중... (${done + failed + 1} / ${pending.length})`);
                 const ref = database.ref(`evaluations/${subjKey}/${studentKey}/submissions/${subId}`);
                 try {
-                    const result = await callGemini(sub);
+                    let result;
+                    try {
+                        result = await callGemini(sub);
+                    } catch (firstErr) {
+                        // 일시적 오류(형식 어긋남·순간 혼잡)일 수 있으니 1.5초 쉬고 한 번 더 시도
+                        await new Promise((r) => setTimeout(r, 1500));
+                        result = await callGemini(sub);
+                    }
                     await ref.update({
                         status: '채점완료',
                         score: `${result.score} / 10점`,
@@ -1581,7 +1616,7 @@ ${sub.answer}
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: prompt }] }],
-                            generationConfig: { temperature: 0.4 }
+                            generationConfig: { temperature: 0.4, responseMimeType: 'application/json' }
                         })
                     }
                 );
@@ -1591,9 +1626,7 @@ ${sub.answer}
                 if (res.status === 400 || res.status === 403) throw new Error('Gemini 호출 실패: ' + lastError);
             }
             if (!data) throw new Error('Gemini 호출 실패 (모든 모델 시도함): ' + lastError);
-            const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '')
-                .replace(/```json|```/g, '').trim();
-            return JSON.parse(text);
+            return parseGeminiJson(data);
         }
 
         function buildRecordPrompt(info, subs) {
@@ -1898,28 +1931,18 @@ ${perf}
                 rows.push({ key, session, info, list, latest: list[list.length - 1] || null, count: list.length });
             });
 
-            // 반 선택 목록을 실제 데이터에서 자동으로 채움 (선택 상태는 유지)
-            const filterClassSel = document.getElementById('filter-class');
-            const classList = [...new Set(rows.map((r) => String(r.info.class || '').trim()).filter(Boolean))]
-                .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
-            const prevClass = filterClassSel.value;
-            filterClassSel.innerHTML = '';
-            [['', '전체'], ...classList.map((c) => [c, c])].forEach(([v, t]) => {
-                const o = document.createElement('option');
-                o.value = v;
-                o.textContent = t;
-                filterClassSel.appendChild(o);
-            });
-            if ([...filterClassSel.options].some((o) => o.value === prevClass)) {
-                filterClassSel.value = prevClass;
+            // 반 이름에서 숫자를 뽑아 비교 ("1", "1반", "전자과 1반" 모두 1반으로 인식)
+            function classNum(v) {
+                const m = String(v || '').match(/\d+/);
+                return m ? Number(m[0]) : null;
             }
 
-            // 필터 적용
+            // 필터 적용 (반 선택지는 1~7반 고정)
             const gSel = document.getElementById('filter-grade').value;
-            const cSel = filterClassSel.value;
+            const cSel = document.getElementById('filter-class').value;
             const visible = rows.filter((r) =>
-                (!gSel || String(r.info.grade || '').trim() === gSel) &&
-                (!cSel || String(r.info.class || '').trim() === cSel)
+                (!gSel || classNum(r.info.grade) === Number(gSel)) &&
+                (!cSel || classNum(r.info.class) === Number(cSel))
             );
             document.getElementById('filter-status').textContent =
                 (gSel || cSel) ? `필터 적용 중: ${visible.length}명 / 전체 ${rows.length}명` : '';
